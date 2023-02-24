@@ -1,0 +1,6 @@
+pyro-ppl
+torch 
+numpy
+pandas 
+pytest
+scipy 

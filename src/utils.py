@@ -39,10 +39,9 @@ def compute_elbo(
         _phi_:tr.Tensor, 
         _lambda_:tr.Tensor,
         _alpha_: tr.Tensor,
-        eta: tr.Tensor,
-        beta: tr.Tensor, 
-        theta: tr.Tensor, 
-        word_cts: List[Dict[int]], 
+        _eta_: tr.Tensor,
+        word_cts: List[Dict[str:int]], 
+        word_inds: Dict[str:int], 
         train_mode = True, 
     ): 
 
@@ -86,21 +85,91 @@ def compute_elbo(
         _type_: _description_
     """
     assert batch_size == len(word_cts)
-    #assert len(vocabs) == len(word_cts[0])
-    vocab_size = len(word_cts[0])
+
+    num_topics = _alpha_.shape[1] if _alpha_.ndim == 2 else len(_alpha_)
+    vocabs = list(word_inds.keys())
+
+    # iterate through topics to collect variables 
+    Eq_log_betas = {}
+    for k in num_topics: 
+        Eq_log_betas[k]= expec_log_dirichlet(_lambda_[k])
 
     # part 1, the local part of the ELBO, this part of the parameters are optimised locally/ against each document 
-
-    ELBO = 0
+    term1 = 0 
     for d in range(batch_size): 
 
         doc_vocab = list(word_cts[d].keys())
+        Eq_log_thetas = expec_log_dirichlet(_gamma_[d,:])
 
-        for v in doc_vocab:
+        v_sum = 0
+        for v in vocabs:
             v:str
 
-            # trianing mode, every word for sure het a count
+            # trianing mode, every word for sure is in the corpus
             count_dv = word_cts[d][v]
+
+            # get the word index
+            v_indx = word_inds[v]
+
+            #Eq(log Theta_d, across all k dimensions), using the gamma variational distribution
+
+            k_sum = 0 
+            for k in range(num_topics):
+
+                k_sum += (Eq_log_thetas[k] + Eq_log_betas[k][v_indx] - tr.log(_phi_[d][v_indx][k])) * _phi_[d][v_indx][k]
+
+            v_sum += count_dv * k_sum
+
+        term1 += v_sum 
+
+        term1 += tr.dot((_alpha_ - _gamma_[d]), Eq_log_thetas) 
+
+        term1 += tr.lgamma(
+            tr.sum(_gamma_[d])
+        )
+
+        term1 -= tr.sum(tr.lgamma(_gamma_[d]))
+
+    # part 2, the global part of the ELBO, this part of the parameters are shared across documnets 
+    term2 = (tr.lgamma(tr.sum(_alpha_)) - tr.sum(tr.lgamma(_alpha_))) * batch_size
+
+    for k in range(num_topics): 
+
+        k_sum_2 = 0 
+
+        k_sum_2 += tr.lgamma(tr.sum(_eta_)) - tr.sum(tr.lgamma(_eta_))
+
+        k_sum_2 += tr.dot((_eta_ - _lambda_[k]), expec_log_dirichlet(_lambda_[k]))
+
+        k_sum_2 -= tr.lgamma(tr.sum(_lambda_[k]))
+
+        k_sum_2 += tr.sum(tr.lgamma(_lambda_[k]))
+
+        term2 += k_sum_2/batch_size
+
+    return term1 + term2 
+
+
+
+
+    
+
+
+
+
+
+             
+                                                            
+
+
+
+
+
+
+
+
+
+
 
             
 

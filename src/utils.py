@@ -23,6 +23,25 @@ def expec_log_dirichlet(dirichlet_parm:tr.Tensor,) -> tr.Tensor:
     assert temr1s.shape == dirichlet_parm.shape 
     return temr1s - term2
 
+def log_gamma_sum_term(x:tr.Tensor) -> tr.Tensor:
+
+    """Compute 
+
+    LogGamma(SumDims) - SumDims(LogGamma(x_i)) as this appears in the elbo formula frequently 
+
+    Returns:
+        _type_: _description_
+    """
+
+    # column vector representation of hyperparameters 
+    if x.ndim == 1: 
+        x = x.reshape(-1,1)
+
+    assert x.shape[0] >= 1 and x.shape[1] == 1 
+    sum_ = tr.sum(x)
+
+    return tr.lgamma(sum_) - tr.sum(tr.lgamma(x))
+
 
 def compute_elbo(
         batch_size: int, 

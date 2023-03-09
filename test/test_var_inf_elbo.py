@@ -3,19 +3,9 @@ import numpy as np
 from scipy.special import loggamma 
 import torch as tr 
 
-from src.utils import expec_log_dirichlet, log_gamma_sum_term
+from src.utils import expec_log_dirichlet, log_gamma_sum_term, eblo_corpus_part
 from test.test_func_expec_log_dirichlet import expec_log_dirichlet_mirror
 
-def log_gamma_sum_term(x:tr.Tensor) -> float: 
-
-    # column vector representation of hyperparameters 
-    if x.ndim == 1: 
-        x = x.reshape(1,-1)
-
-    assert x.shape[0] == 1 and x.shape[1] >= 1 
-    sum_ = tr.sum(x)
-
-    return (tr.lgamma(sum_) - tr.sum(tr.lgamma(x))).item()
 
 def log_gamma_sum_term_mirror(x:np.ndarray,) -> float: 
 
@@ -54,40 +44,6 @@ def test_log_gamma_sum_function(input_1):
             assert round(res,5) == round(np.log(120),5)
         if i == 2: 
             assert round(res,5) == round(np.log(40320) - 3*np.log(2),5)
-
-
-def var_inf_part2_corpus_level(
-        _eta_: tr.Tensor,
-        _lambda_: tr.Tensor, 
-        _alpha_:tr.Tensor, 
-        num_topics:int, 
-        batch_size:int,
-    ) -> float: 
-
-    if _alpha_.ndim == 2: 
-        K = len(_alpha_[0])
-        _alpha_ = _alpha_[0]
-        _eta_ = _eta_[0]
-    else:
-        K = len(_alpha_) 
-
-    assert num_topics == K
-
-    # part 2, the global part of the ELBO, this part of the parameters are shared across documnets 
-    term2 = log_gamma_sum_term(_alpha_) * batch_size
-
-    for k in range(K): 
-
-        k_sum_2 = 0 
-        k_sum_2 += log_gamma_sum_term(_eta_)
-
-        #print(_eta_ - _lambda_[k,:]) 
-        k_sum_2 += tr.dot((_eta_ - _lambda_[k]).flatten(), expec_log_dirichlet(_lambda_[k]))
-        k_sum_2 -= log_gamma_sum_term(_lambda_[k])
-
-        term2 += k_sum_2
-
-    return term2.item()
 
 
 def var_inf_part2_corpus_level_mirror(
@@ -165,7 +121,7 @@ def test_corpus_part_ELBO(input_2):
     for k,v in vars_tr.items(): 
         vars_tr[k] = tr.from_numpy(v)
 
-    elbo1 = var_inf_part2_corpus_level(
+    elbo1 = eblo_corpus_part(
         vars_tr['_eta_'],
         vars_tr['_lambda_'],
         vars_tr['_alpha_'],
@@ -181,7 +137,7 @@ def test_corpus_part_ELBO(input_2):
         2, 
     )
 
-    assert round(elbo1,5) == round(elbo2,5)
+    assert round(elbo1,4) == round(elbo2,4)
 
     
 

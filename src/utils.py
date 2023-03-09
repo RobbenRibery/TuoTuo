@@ -23,7 +23,7 @@ def expec_log_dirichlet(dirichlet_parm:tr.Tensor,) -> tr.Tensor:
     assert temr1s.shape == dirichlet_parm.shape 
     return temr1s - term2
 
-def log_gamma_sum_term(x:tr.Tensor) -> tr.Tensor:
+def log_gamma_sum_term(x:tr.Tensor) -> float:
 
     """Compute 
 
@@ -40,21 +40,17 @@ def log_gamma_sum_term(x:tr.Tensor) -> tr.Tensor:
     assert x.shape[0] >= 1 and x.shape[1] == 1 
     sum_ = tr.sum(x)
 
-    return tr.lgamma(sum_) - tr.sum(tr.lgamma(x))
+    return (tr.lgamma(sum_) - tr.sum(tr.lgamma(x))).item()
 
 
 def compute_elbo(
-        batch_size: int, 
         _gamma_:tr.Tensor, 
         _phi_:tr.Tensor, 
         _lambda_:tr.Tensor,
         _alpha_: tr.Tensor,
         _eta_: tr.Tensor,
-        word_cts: List[Dict], 
-        word_pos: List[Dict],
-        word_to_inds: Dict, 
-        return_type: Union[float, tr.Tensor] = float,
-    ): 
+        w_ct: tr.Tensor, 
+    ) -> float: 
 
     """Compute the approximated value for the ELBO, which is the objective function in EM steps, against a batch of documents 
 
@@ -92,71 +88,94 @@ def compute_elbo(
     Returns:
         _type_: _description_
     """
-    assert batch_size == len(word_cts)
+    _gamma_.shape[0] == _phi_.shape[0]
 
-    num_topics = _alpha_.shape[1] if _alpha_.ndim == 2 else len(_alpha_)
-    vocabs = list(word_to_inds.keys())
+    n_docs = _gamma_.shape[0]
 
-    # iterate through topics to collect variables 
-    Eq_log_betas = {}
-    for k in range(num_topics): 
-        Eq_log_betas[k]= expec_log_dirichlet(_lambda_[k])
+    corpus_term =  eblo_corpus_part(_eta_, _lambda_, _alpha_, n_docs)
 
-    # part 1, the local part of the ELBO, this part of the parameters are optimised locally/ against each document 
-    term1 = 0 
-    for d in range(batch_size): 
+    doc_term = elbo_doc_depend_part(_eta_, _gamma_, _phi_, _lambda_, w_ct)
 
-        Eq_log_thetas = expec_log_dirichlet(_gamma_[d,:])
+    return corpus_term + doc_term
 
-        v_sum = 0
-        for v in vocabs:
-            v:str
 
-            count_dv = word_cts[d].get(v,0)
-            if count_dv == 0: 
-                continue 
+def eblo_corpus_part(
+        _eta_: tr.Tensor,
+        _lambda_: tr.Tensor, 
+        _alpha_:tr.Tensor, 
+        n_docs:int,
+    ) -> float: 
 
-            # get the word index in the vocabulary set 
-            v_indx = word_to_inds[v]
+    if _alpha_.ndim == 2: 
+        K = len(_alpha_[0])
+        _alpha_ = _alpha_[0]
+        _eta_ = _eta_[0]
+    else:
+        K = len(_alpha_) 
 
-            #Eq(log Theta_d, across all k dimensions), using the gamma variational distribution
-
-            k_sum = 0 
-            for k in range(num_topics):
-                k_sum += (Eq_log_thetas[k] + Eq_log_betas[k][v_indx] - tr.log(_phi_[d][word_pos[d][v][0]][k])) * _phi_[d][v_indx][k]
-
-            v_sum += count_dv * k_sum
-
-        term1 += v_sum 
-
-        term1 += tr.dot((_alpha_ - _gamma_[d]), Eq_log_thetas) 
-
-        term1 += tr.lgamma(
-            tr.sum(_gamma_[d])
-        )
-
-        term1 -= tr.sum(tr.lgamma(_gamma_[d]))
 
     # part 2, the global part of the ELBO, this part of the parameters are shared across documnets 
-    term2 = (tr.lgamma(tr.sum(_alpha_)) - tr.sum(tr.lgamma(_alpha_))) * batch_size
+    term2 = log_gamma_sum_term(_alpha_) * n_docs
 
-    for k in range(num_topics): 
+    for k in range(K): 
 
         k_sum_2 = 0 
+        k_sum_2 += log_gamma_sum_term(_eta_)
 
-        k_sum_2 += tr.lgamma(tr.sum(_eta_)) - tr.sum(tr.lgamma(_eta_))
+        #print(_eta_ - _lambda_[k,:]) 
+        k_sum_2 += tr.dot((_eta_ - _lambda_[k]).flatten(), expec_log_dirichlet(_lambda_[k]))
+        k_sum_2 -= log_gamma_sum_term(_lambda_[k])
 
-        k_sum_2 += tr.dot((_eta_ - _lambda_[k]), expec_log_dirichlet(_lambda_[k]))
+        term2 += k_sum_2
 
-        k_sum_2 -= tr.lgamma(tr.sum(_lambda_[k]))
+    return term2.item()
 
-        k_sum_2 += tr.sum(tr.lgamma(_lambda_[k]))
 
-        term2 += k_sum_2/batch_size
+def elbo_doc_depend_part(
+        _alpha_: tr.Tensor, 
+        _gamma_: tr.Tensor, 
+        _phi_: tr.Tensor, 
+        _lambda_:tr.Tensor,
+        w_ct:tr.Tensor, 
+    ) -> float:
 
-    if return_type == float:
-        return (term1 + term2).item()
+    assert _phi_.ndim() == 3 
 
-    else:
-        return term1 + term2  
+    M = _phi_.shape[0]
+    V = _lambda_.shape[0]
+
+    term1 = 0 
+    for d in range(M): 
+
+        term1 -= log_gamma_sum_term(_gamma_[d])
+
+        term1 += tr.dot(
+            _alpha_ - _gamma_[d],
+            expec_log_dirichlet(_gamma_[d])
+        )
+
+        #get number of words, as per documnet 
+        Nd = _phi_[d].shape[0] 
+
+        for n in range(Nd): 
+
+            term1 += tr.dot(
+                _phi_[d][n],
+                expec_log_dirichlet(_gamma_[d])
+            )
+
+            term1 -= tr.dot(
+                _phi_[d][n],
+                tr.log(_phi_[d][n])
+            )
+
+        for v in V:
+
+            term1 += w_ct[v][d] * tr.dot(
+                _phi_[d][n],
+                expec_log_dirichlet(_lambda_[:,v])
+            )
+
+    return term1.item() 
+
 

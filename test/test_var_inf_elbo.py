@@ -1,9 +1,11 @@
 import pytest 
+from pprint import pprint
+
 import numpy as np 
 from scipy.special import loggamma 
 import torch as tr 
 
-from src.utils import expec_log_dirichlet, log_gamma_sum_term, eblo_corpus_part
+from src.utils import expec_log_dirichlet, log_gamma_sum_term, eblo_corpus_part, elbo_doc_depend_part
 from test.test_func_expec_log_dirichlet import expec_log_dirichlet_mirror
 
 
@@ -125,7 +127,6 @@ def test_corpus_part_ELBO(input_2):
         vars_tr['_eta_'],
         vars_tr['_lambda_'],
         vars_tr['_alpha_'],
-        3,
         2, 
     )
 
@@ -147,6 +148,8 @@ def var_inf_part1_doc_level_mirror(
     _lambda_:np.ndarray,
     docs: np.ndarray,
 ): 
+    if _alpha_.ndim == 2: 
+        _alpha_ = _alpha_.ravel()
     
     M = _gamma_.shape[0]
     K = _gamma_.shape[1]
@@ -159,22 +162,148 @@ def var_inf_part1_doc_level_mirror(
             term1 += (_alpha_[i]-1) * E_gamma_d[i]
 
         #get the number of words
-        N = _phi_[d].shape[0]
+        _phi_d =np.array(_phi_[d], dtype=float)
+        N =  _phi_d.shape[0]
 
         for n in range(N): 
 
             wn_idx_inv = docs[d][n]
 
-            term2 += np.sum([_phi_[d][n, i] * E_gamma_d[i] for i in range(K)])
+            term2 += np.sum([_phi_d[n, i] * E_gamma_d[i] for i in range(K)])
 
-            term3 += np.sum([_phi_[d][n, i] * expec_log_dirichlet_mirror(_lambda_[i])[wn_idx_inv] for i in range(K)])
+            term3 += np.sum([_phi_d[n, i] * expec_log_dirichlet_mirror(_lambda_[i])[wn_idx_inv] for i in range(K)])
 
             term4 -= log_gamma_sum_term_mirror(_gamma_[d])
 
             term4 -= np.sum([(_gamma_[d][i]-1) * E_gamma_d[i] for i in range(K)])
 
-            term5 -= np.sum(_phi_[d][n,i] * np.log(_phi_[d][n,i]) for i in range(K))
+            term5 -= np.sum(_phi_d[n,i] * np.log(_phi_d[n,i]) for i in range(K))
 
     return term1 + term2 + term3 + term4 + term5 
+
+
+@pytest.fixture
+def input3_(): 
+
+    # 3 topics 
+    # 2 documents 
+        ## first document has 5 words, 
+        ## secondd document has 8 words 
+        ## total vocab size is 10 
+    # 
+
+    _init_var = {
+        '_alpha_': np.array(
+            [[1,2,3]],
+        ),
+        '_phi_': np.array(
+            [
+                [ # cols = topic, # column = word
+                    [0.3, 0.3, 0.4],
+                    [0.3, 0.3, 0.4],    
+                    [0.3, 0.3, 0.4],
+                    [0.3, 0.3, 0.4], 
+                    [0.3, 0.3, 0.4], # document all words is at first vocab
+                ],
+                [
+                    [0.2, 0.2, 0.8], # document words is at the first 8 vocabs
+                    [0.2, 0.2, 0.8],    
+                    [0.2, 0.2, 0.8],
+                    [0.2, 0.2, 0.8], 
+                    [0.2, 0.2, 0.8],
+                    [0.2, 0.2, 0.8],
+                    [0.2, 0.2, 0.8],    
+                    [0.2, 0.2, 0.8],
+                ],
+            ], dtype=object
+        ),
+        '_gamma_':np.array(
+            [
+                [1,2,3],
+                [1,2,3],
+            ]
+        ),
+        '_lambda_': np.array([
+            [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1,],
+            [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1,],
+            [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1,],
+        ]),
+        'docs': np.array(
+            [
+                [0,0,0,0,0,],
+                [0,1,2,3,4,5,6,7,],
+            ], dtype=object
+        ),
+        'w_ct':np.array(
+            [
+                [
+                    5,1
+                ],# word 0
+                [
+                    0,1
+                ],# word 1
+                [
+                    0,1
+                ], #word 2
+                [
+                    0,1
+                ], #word 3
+                [
+                    0,1
+                ], #word 4
+                [
+                    0,1
+                ], #word 5
+                [
+                    0,1
+                ], #word 6
+                [
+                    0,0
+                ], #word 7
+                [
+                    0,0
+                ], #word 8
+                [
+                    0,0
+                ], #word 8
+            ]
+        )
+    }
+
+    # check on the input size 
+
+    assert _init_var['_alpha_'].shape == (1,3)
+    assert np.array(_init_var['_phi_'][0],dtype=float).shape == (5,3)
+    assert np.array(_init_var['_phi_'][1],dtype=float).shape == (8,3)
+    assert _init_var['_gamma_'].shape == (2,3)
+    assert _init_var['_lambda_'].shape == (3,10)
+    assert np.array(_init_var['docs'][0], dtype=float).shape == (5,)
+    assert np.array(_init_var['docs'][1], dtype=float).shape == (8,)
+    assert _init_var['w_ct'].shape == (10,2)
+
+    return  _init_var
+
+
+def test_docs_part_ELBO(input3_): 
+
+    pprint(input3_)
+
+    doc_elbo_mirror = var_inf_part1_doc_level_mirror(
+        input3_['_alpha_'],
+        input3_['_gamma_'],
+        input3_['_phi_'],
+        input3_['_lambda_'],
+        input3_['docs']
+    )
+
+    doc_elbo = elbo_doc_depend_part(
+        tr.from_numpy(input3_['_alpha_']),
+        tr.from_numpy(input3_['_gamma_']),
+        input3_['_phi_'],
+        tr.from_numpy(input3_['_lambda_']),
+        tr.from_numpy(input3_['w_ct'])
+    )
+
+    assert doc_elbo_mirror == doc_elbo
 
 

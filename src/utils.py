@@ -134,15 +134,23 @@ def eblo_corpus_part(
 def elbo_doc_depend_part(
         _alpha_: tr.Tensor, 
         _gamma_: tr.Tensor, 
-        _phi_: tr.Tensor, 
+        _phi_: np.ndarray,
         _lambda_:tr.Tensor,
         w_ct:tr.Tensor, 
     ) -> float:
 
-    assert _phi_.ndim() == 3 
-    
+    #print(w_ct)
+    #print(w_ct.shape)
 
-    M = _phi_.shape[0]
+    _alpha_ = _alpha_.double()
+    _gamma_ = _gamma_.double()
+    _lambda_ = _lambda_.double()
+    w_ct = w_ct.double()
+    
+    if _alpha_.ndim == 2: 
+        _alpha_ = _alpha_.flatten()
+
+    M = len(_phi_)
     V = _lambda_.shape[1]
     K = _lambda_.shape[0]
 
@@ -161,24 +169,28 @@ def elbo_doc_depend_part(
         )
 
         #get number of words, as per documnet 
-        Nd = _phi_[d].shape[0] 
+        _phi_d = tr.from_numpy(np.array(_phi_[d],dtype=float))
+        _phi_d = _phi_d.double()
+        Nd = _phi_d.shape[0] 
 
         for n in range(Nd): 
 
             term1 += tr.dot(
-                _phi_[d][n],
+                _phi_d[n],
                 expec_log_dirichlet(_gamma_[d])
             )
 
             term1 -= tr.dot(
-                _phi_[d][n],
-                tr.log(_phi_[d][n])
+                _phi_d[n],
+                tr.log(_phi_d[n])
             )
 
-        for v in V:
+        for v in range(V):
+            print(v,d)
+            print(w_ct.shape)
             term1 += w_ct[v][d] * tr.dot(
-                _phi_[d][n],
-                expec_log_dirichlet(expec_beta_store[:,v])
+                _phi_d[n],
+                expec_beta_store[:,v]
             )
 
     return term1.item() 

@@ -140,9 +140,15 @@ def elbo_doc_depend_part(
     ) -> float:
 
     assert _phi_.ndim() == 3 
+    
 
     M = _phi_.shape[0]
-    V = _lambda_.shape[0]
+    V = _lambda_.shape[1]
+    K = _lambda_.shape[0]
+
+    expec_beta_store = tr.empty((_lambda_.shape), dtype=float)
+    for k in range(K): 
+        expec_beta_store[k] = expec_log_dirichlet(_lambda_[k])
 
     term1 = 0 
     for d in range(M): 
@@ -170,10 +176,9 @@ def elbo_doc_depend_part(
             )
 
         for v in V:
-
             term1 += w_ct[v][d] * tr.dot(
                 _phi_[d][n],
-                expec_log_dirichlet(_lambda_[:,v])
+                expec_log_dirichlet(expec_beta_store[:,v])
             )
 
     return term1.item() 

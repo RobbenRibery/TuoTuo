@@ -140,6 +140,41 @@ def test_corpus_part_ELBO(input_2):
     assert round(elbo1,4) == round(elbo2,4)
 
     
+def var_inf_part1_doc_level_mirror(
+    _alpha_: np.ndarray,
+    _gamma_: np.ndarray,
+    _phi_:np.ndarray, 
+    _lambda_:np.ndarray,
+    docs: np.ndarray,
+): 
+    
+    M = _gamma_.shape[0]
+    K = _gamma_.shape[1]
 
+    term1, term2, term3, term4, term5 = 0,0,0,0,0
+    for d in range(M): 
+
+        E_gamma_d = expec_log_dirichlet_mirror(_gamma_[d])
+        for i in range(K):
+            term1 += (_alpha_[i]-1) * E_gamma_d[i]
+
+        #get the number of words
+        N = _phi_[d].shape[0]
+
+        for n in range(N): 
+
+            wn_idx_inv = docs[d][n]
+
+            term2 += np.sum([_phi_[d][n, i] * E_gamma_d[i] for i in range(K)])
+
+            term3 += np.sum([_phi_[d][n, i] * expec_log_dirichlet_mirror(_lambda_[i])[wn_idx_inv] for i in range(K)])
+
+            term4 -= log_gamma_sum_term_mirror(_gamma_[d])
+
+            term4 -= np.sum([(_gamma_[d][i]-1) * E_gamma_d[i] for i in range(K)])
+
+            term5 -= np.sum(_phi_[d][n,i] * np.log(_phi_[d][n,i]) for i in range(K))
+
+    return term1 + term2 + term3 + term4 + term5 
 
 

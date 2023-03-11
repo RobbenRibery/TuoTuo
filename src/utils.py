@@ -93,8 +93,10 @@ def compute_elbo(
     n_docs = _gamma_.shape[0]
 
     corpus_term =  eblo_corpus_part(_eta_, _lambda_, _alpha_, n_docs)
+    #print(corpus_term)
 
-    doc_term = elbo_doc_depend_part(_eta_, _gamma_, _phi_, _lambda_, w_ct)
+    doc_term = elbo_doc_depend_part(_alpha_, _gamma_, _phi_, _lambda_, w_ct)
+    #print(doc_term)
 
     return corpus_term + doc_term
 
@@ -108,8 +110,8 @@ def eblo_corpus_part(
 
     if _alpha_.ndim == 2: 
         K = len(_alpha_[0])
-        _alpha_ = _alpha_[0]
-        _eta_ = _eta_[0]
+        _alpha_ = _alpha_.flatten()
+        _eta_ = _eta_.flatten()
     else:
         K = len(_alpha_) 
 
@@ -150,15 +152,17 @@ def elbo_doc_depend_part(
     if _alpha_.ndim == 2: 
         _alpha_ = _alpha_.flatten()
 
-    M = len(_phi_)
+    M = _gamma_.shape[0]
     V = _lambda_.shape[1]
-    K = _lambda_.shape[0]
+    K = _gamma_.shape[1]
+
+    #print(f"Optimised Function | Number of document: {M} | Number of topics: {K}")
 
     expec_beta_store = tr.empty((_lambda_.shape), dtype=float)
     for k in range(K): 
         expec_beta_store[k] = expec_log_dirichlet(_lambda_[k])
 
-    term1 = 0 
+    term1, term2, term3 = 0, 0, 0  
     for d in range(M): 
 
         term1 -= log_gamma_sum_term(_gamma_[d])
@@ -168,31 +172,78 @@ def elbo_doc_depend_part(
             expec_log_dirichlet(_gamma_[d])
         )
 
+        #print(term1)
+
         #get number of words, as per documnet 
         _phi_d = tr.from_numpy(np.array(_phi_[d],dtype=float))
         _phi_d = _phi_d.double()
         Nd = _phi_d.shape[0] 
 
+        #print(f"Optimised Function | Numnber of words {Nd}")
+
         for n in range(Nd): 
 
-            term1 += tr.dot(
+            term2 += tr.dot(
                 _phi_d[n],
                 expec_log_dirichlet(_gamma_[d])
             )
 
-            term1 -= tr.dot(
+            term2 -= tr.dot(
                 _phi_d[n],
                 tr.log(_phi_d[n])
             )
 
+        val_delta = 0
         for v in range(V):
-            print(v,d)
-            print(w_ct.shape)
-            term1 += w_ct[v][d] * tr.dot(
+            #print(v,d)
+            #print(w_ct.shape)
+            delta = (
+                w_ct[v][d] * tr.dot(
+                _phi_d[n],
+                expec_beta_store[:,v]
+                )
+            )
+            #print(delta)
+            val_delta += delta
+
+            term3 += w_ct[v][d] * tr.dot(
                 _phi_d[n],
                 expec_beta_store[:,v]
             )
+        #print(val_delta)
+    #print(term1, term2, term3)
+    return term1.item() + term2.item() + term3.item() 
 
-    return term1.item() 
+
+def get_vocab_from_docs(docs:List[List[str]]): 
+
+    w_ct_dict = {}
+
+    for id, doc in enumerate(docs):
+
+        for word in doc: 
+
+            if word not in w_ct_dict: 
+                w_ct_dict[word] = [0]*len(docs)
+            
+            w_ct_dict[word][id] += 1 
+
+    return w_ct_dict
+
+def get_np_wct(w_ct_dict:Dict, docs:List[List[str]]):
+
+    w_ct_np = np.empty((len(w_ct_dict), len(docs)), dtype=float)
+
+    w_2_idx = {}
+
+    w_idx = 0 
+    for w, cts in w_ct_dict.items(): 
+
+        w_ct_np[w_idx] = cts 
+        w_2_idx[w] = w_idx 
+
+        w_idx += 1 
+
+    return w_ct_np, w_2_idx 
 
 

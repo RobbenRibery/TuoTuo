@@ -5,7 +5,7 @@ import numpy as np
 from scipy.special import loggamma 
 import torch as tr 
 
-from src.utils import expec_log_dirichlet, log_gamma_sum_term, eblo_corpus_part, elbo_doc_depend_part
+from src.utils import expec_log_dirichlet, log_gamma_sum_term, eblo_corpus_part, elbo_doc_depend_part, compute_elbo 
 from test.test_func_expec_log_dirichlet import expec_log_dirichlet_mirror
 
 
@@ -154,6 +154,8 @@ def var_inf_part1_doc_level_mirror(
     M = _gamma_.shape[0]
     K = _gamma_.shape[1]
 
+    print(f"Mirror Function | Number of document: {M} | Number of topics: {K}")
+
     term1, term2, term3, term4, term5 = 0,0,0,0,0
     for d in range(M): 
 
@@ -161,23 +163,36 @@ def var_inf_part1_doc_level_mirror(
         for i in range(K):
             term1 += (_alpha_[i]-1) * E_gamma_d[i]
 
+            # val;idations 
+            delta1 = (_alpha_[i]-1) * E_gamma_d[i]
+
         #get the number of words
         _phi_d =np.array(_phi_[d], dtype=float)
-        N =  _phi_d.shape[0]
+        Nd =  _phi_d.shape[0]
+        #print(f"Mirror Function | Numnber of words {Nd}")
 
-        for n in range(N): 
+        term4 -= log_gamma_sum_term_mirror(_gamma_[d])
+        term4 -= np.sum([(_gamma_[d][i]-1) * E_gamma_d[i] for i in range(K)])
+
+        #val_delta = 0
+        for n in range(Nd):
+            #print(f"Mirror Functino, iterate: {n}") 
 
             wn_idx_inv = docs[d][n]
 
             term2 += np.sum([_phi_d[n, i] * E_gamma_d[i] for i in range(K)])
 
             term3 += np.sum([_phi_d[n, i] * expec_log_dirichlet_mirror(_lambda_[i])[wn_idx_inv] for i in range(K)])
-
-            term4 -= log_gamma_sum_term_mirror(_gamma_[d])
-
-            term4 -= np.sum([(_gamma_[d][i]-1) * E_gamma_d[i] for i in range(K)])
+            #delta2 = -log_gamma_sum_term_mirror(_gamma_[d])
+            #delta3 = -np.sum([(_gamma_[d][i]-1) * E_gamma_d[i] for i in range(K)])
 
             term5 -= np.sum(_phi_d[n,i] * np.log(_phi_d[n,i]) for i in range(K))
+
+        #print(term1, term4, term1+term4)
+
+        #print(val_delta)
+
+    #print(term1+term4, term2+term5, term3)
 
     return term1 + term2 + term3 + term4 + term5 
 
@@ -193,6 +208,9 @@ def input3_():
     # 
 
     _init_var = {
+        '_eta_': np.array(
+            [[2,2,2,2,2,2,2,2,2,2]],
+        ),
         '_alpha_': np.array(
             [[1,2,3]],
         ),
@@ -258,14 +276,14 @@ def input3_():
                     0,1
                 ], #word 6
                 [
-                    0,0
+                    0,1
                 ], #word 7
                 [
                     0,0
                 ], #word 8
                 [
                     0,0
-                ], #word 8
+                ], #word 9
             ]
         )
     }
@@ -305,5 +323,27 @@ def test_docs_part_ELBO(input3_):
     )
 
     assert doc_elbo_mirror == doc_elbo
+
+
+    corpus_eblo_mirror = var_inf_part2_corpus_level_mirror(
+        input3_['_eta_'],
+        input3_['_lambda_'],
+        input3_['_alpha_'],
+        input3_['_gamma_'].shape[1],
+        input3_['_gamma_'].shape[0], 
+    )
+
+    elbo = compute_elbo(
+        tr.from_numpy(input3_['_gamma_']),
+        input3_['_phi_'],
+        tr.from_numpy(input3_['_lambda_']),
+        tr.from_numpy(input3_['_alpha_']),
+        tr.from_numpy(input3_['_eta_']),
+        tr.from_numpy(input3_['w_ct']),
+    )
+
+    elbo_mirror = doc_elbo_mirror + corpus_eblo_mirror
+
+    assert round(elbo,4) == round(elbo_mirror,4)
 
 

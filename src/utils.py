@@ -4,6 +4,8 @@ from scipy.special import gammaln, psi
 
 from typing import List, Dict, Union
 
+DTYPE = tr.double
+
 def expec_log_dirichlet(dirichlet_parm:tr.Tensor,) -> tr.Tensor: 
 
     """Compute the E[log x_i | dirichlet_parm] for every single dimension, return as a tensor 
@@ -50,6 +52,7 @@ def compute_elbo(
         _alpha_: tr.Tensor,
         _eta_: tr.Tensor,
         w_ct: tr.Tensor, 
+        docs: np.ndarray,
     ) -> float: 
 
     """Compute the approximated value for the ELBO, which is the objective function in EM steps, against a batch of documents 
@@ -95,7 +98,7 @@ def compute_elbo(
     corpus_term =  eblo_corpus_part(_eta_, _lambda_, _alpha_, n_docs)
     #print(corpus_term)
 
-    doc_term = elbo_doc_depend_part(_alpha_, _gamma_, _phi_, _lambda_, w_ct)
+    doc_term = elbo_doc_depend_part(_alpha_, _gamma_, _phi_, _lambda_, w_ct, docs)
     #print(doc_term)
 
     return corpus_term + doc_term
@@ -139,6 +142,7 @@ def elbo_doc_depend_part(
         _phi_: np.ndarray,
         _lambda_:tr.Tensor,
         w_ct:tr.Tensor, 
+        docs:np.ndarray,
     ) -> float:
 
     #print(w_ct)
@@ -193,21 +197,25 @@ def elbo_doc_depend_part(
                 tr.log(_phi_d[n])
             )
 
-        val_delta = 0
-        for v in range(V):
-            #print(v,d)
-            #print(w_ct.shape)
-            delta = (
-                w_ct[v][d] * tr.dot(
-                _phi_d[n],
-                expec_beta_store[:,v]
-                )
-            )
-            #print(delta)
-            val_delta += delta
+        for v in range(V):  
+            
+            docs_d = tr.from_numpy(np.array(docs[d])).double()
+            vdoc_poss = (docs_d == v).nonzero(as_tuple=True)[0]
+            # print(vdoc_poss)
+            # print(_phi_d[vdoc_poss.tolist()])
+            # print(_phi_d[vdoc_poss.tolist()].unique(dim=0, return_counts=True))
 
+            if len(vdoc_poss) == 0: 
+                assert w_ct[v][d] == 0, print(w_ct[v][d])
+                _phi_dn = tr.tensor([0]*K, dtype=DTYPE)
+            else: 
+                assert (_phi_d[vdoc_poss.tolist()].unique(dim = 0, return_counts=True)[1] == len(vdoc_poss)).all(), print(_phi_d[vdoc_poss.tolist()], vdoc_poss)
+                _phi_dn = _phi_d[vdoc_poss[0]]
+
+            #if vdoc_poss
+            #print(d, v, _phi_dn, w_ct[v][d])
             term3 += w_ct[v][d] * tr.dot(
-                _phi_d[n],
+                _phi_dn,
                 expec_beta_store[:,v]
             )
         #print(val_delta)
@@ -247,3 +255,9 @@ def get_np_wct(w_ct_dict:Dict, docs:List[List[str]]):
     return w_ct_np, w_2_idx 
 
 
+def np_obj_2_tr(x:np.ndarray) -> tr.Tensor: 
+
+    o = tr.from_numpy(np.array(x, dtype=float))
+    o = o.double()
+
+    return o

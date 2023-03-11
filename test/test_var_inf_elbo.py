@@ -319,7 +319,8 @@ def test_docs_part_ELBO(input3_):
         tr.from_numpy(input3_['_gamma_']),
         input3_['_phi_'],
         tr.from_numpy(input3_['_lambda_']),
-        tr.from_numpy(input3_['w_ct'])
+        tr.from_numpy(input3_['w_ct']),
+        input3_['docs'],
     )
 
     assert doc_elbo_mirror == doc_elbo
@@ -340,6 +341,7 @@ def test_docs_part_ELBO(input3_):
         tr.from_numpy(input3_['_alpha_']),
         tr.from_numpy(input3_['_eta_']),
         tr.from_numpy(input3_['w_ct']),
+        input3_['docs'],
     )
 
     elbo_mirror = doc_elbo_mirror + corpus_eblo_mirror

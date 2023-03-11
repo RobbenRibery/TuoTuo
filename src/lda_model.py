@@ -3,7 +3,14 @@ from typing import List, Dict
 import torch as tr 
 import numpy as np 
 
-from src.utils import get_vocab_from_docs, get_np_wct
+from src.utils import (
+    get_vocab_from_docs, 
+    get_np_wct, 
+    np_obj_2_tr,
+    expec_log_dirichlet,
+    log_gamma_sum_term, 
+    compute_elbo,
+)
 
 SEED = 42
 DTYPE = tr.double 
@@ -28,10 +35,13 @@ class LDASmoothed:
             verbose: bool = True,
         ) -> None:
 
+
         assert get_vocab_from_docs(docs) == word_ct_dict
+
+        self.docs = docs 
         
         # number of documents 
-        M = len(docs)
+        self.M = len(docs)
 
         # number of unique words in corpus 
         if word_ct_array is not None:
@@ -44,19 +54,24 @@ class LDASmoothed:
         else:
             word_ct_array, word_2_idx = get_np_wct(word_ct_dict, docs)
 
+        self.word_ct_array = tr.from_numpy(word_ct_array).double()
+
         self.word_2_idx = word_2_idx 
+        self.word_2_idx:dict 
+
         self.idx_2_word = {v:k for k,v in self.word_2_idx.items()}
+        self.idx_2_word: dict
 
         # number of unique words in the corpus 
-        V = word_ct_array.shape[0]  
+        self.V = word_ct_array.shape[0]  
 
         # number of topics 
-        K = num_topics
+        self.K = num_topics
 
         #parameters init
         # define the DGM hyper-parameters
         # Dirichlet Prior 
-        self._alpha_ = np.random.gamma(100, 0.01, (1,K))
+        self._alpha_ = np.random.gamma(100, 0.01, (1,self.K))
         self._alpha_ = tr.from_numpy(self._alpha_)
         self._alpha_ = self._alpha_.double()
 
@@ -66,7 +81,7 @@ class LDASmoothed:
             print(self._alpha_)
             print() 
         # Dirichlet Prior - Exchangeable Dirichlet
-        self._eta_ = tr.ones(1,V, dtype=DTYPE)
+        self._eta_ = tr.ones(1,self.V, dtype=DTYPE)
 
         if verbose:
             print(f"Word Dirichlet Prior, Eta")
@@ -77,7 +92,7 @@ class LDASmoothed:
 
         # define the Convexity-based Varitional Inference hyper-parameters 
         #Dirichlet Prior, Surrogate for _eta_ 
-        self._lambda_ = tr.ones(K, V, dtype=DTYPE)
+        self._lambda_ = tr.ones(self.K, self.V, dtype=DTYPE)
         if verbose: 
             print(f"Var Inf - Word Dirichlet prior, Lambda")
             print(self._lambda_.shape)
@@ -85,8 +100,8 @@ class LDASmoothed:
             print()
 
         #Dirichlet Prior, Surrogate for _alpha_ 
-        self._gamma_ = self._alpha_ + V/K
-        self._gamma_ = self._gamma_.expand(M,-1)
+        self._gamma_ = self._alpha_ + self.V/self.K
+        self._gamma_ = self._gamma_.expand(self.M,-1)
 
         if verbose: 
             print(f"Var Inf - Topic Dirichlet prior, Gamma")
@@ -96,8 +111,8 @@ class LDASmoothed:
 
         #Multinomial Prior, Surrogate for Theta vector drawn from Dirichlet(Alpha)
         _phi_ = []
-        for d in range(M): 
-            _phi_.append(np.ones((len(docs[d]),K)) * (1/K))
+        for d in range(self.M): 
+            _phi_.append(np.ones((len(docs[d]),self.K)) * (1/self. K))
 
         self._phi_ = np.array(_phi_, dtype=object)
 
@@ -105,3 +120,75 @@ class LDASmoothed:
             print(f"Var -Inf - Word wise Topic Multinomial/Categorical, Phi")
             print(self._phi_.shape)
             print(_phi_)
+
+
+    def e_step(self, threshold:float = 1e-08, verbose:bool = True,) -> None: 
+
+        delta_gamma =  tr.full(self._gamma_.shape, fill_value=tr.inf)
+        l2_delta_gamma = tr.norm(delta_gamma)
+
+        i = 0 
+        while l2_delta_gamma > threshold:
+
+            if verbose: 
+                i+= 1 
+                print(f'Iteration {i}, Delta Gamma = {l2_delta_gamma.item()}')
+
+            gamma = self._gamma_.clone()
+            
+            # Update Phi
+            for d in range(self.M): 
+
+                phi_d = np_obj_2_tr(self._phi_[d])
+                Nd = phi_d.shape[0]
+
+                EqThetaD = expec_log_dirichlet(self._gamma_[d])
+
+                for n in range(Nd): 
+
+                    word = self.docs[d][n]
+                    word:str 
+
+                    vocab_idx = self.word_2_idx[word]
+                    vocab_idx:int 
+
+                    for k in range(self.K):
+
+                        EqBetak = expec_log_dirichlet(self._lambda_[k])
+
+                        phi_d[n][k] = tr.exp(EqThetaD[k] + EqBetak[vocab_idx])
+                        self._phi_[d][n][k] = phi_d[n][k].numpy()
+
+                # normalisation 
+                self._phi_[d][n] = self._phi_[d][n]/np.sum(self._phi_[d][n])
+
+            # Update Lambda 
+            for v in range(self.V): 
+
+                ###
+                # loop through all document 
+                
+                # -> array: given v and k , find the 
+                # position of word v in document d, if not appeared, return 
+
+                ###
+
+                self._lambda_[k][v] += tr.dot(
+                    self.word_ct_array[v], 
+                    tr.from_numpy(self._phi_[:][:][k]).double()
+                )    
+
+            
+
+                gamma[d] = self._alpha_ + self.word_ct_array[:,d]
+
+            delta_gamma = self._gamma_ - gamma
+            l2_delta_gamma = tr.norm(delta_gamma)
+
+            self._gamma_ = gamma
+    
+
+    def m_step(self,): 
+
+
+        return None 

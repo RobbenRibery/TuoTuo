@@ -62,6 +62,12 @@ class LDASmoothed:
         self.idx_2_word = {v:k for k,v in self.word_2_idx.items()}
         self.idx_2_word: dict
 
+        # gather the docs in it's vocab index form 
+        self.docs_v_idx = self.docs.copy()
+        for id, d in enumerate(docs): 
+            for n in range(len(d)): 
+                self.docs_v_idx[id][n] = self.docs[docs[id][n]]
+
         # number of unique words in the corpus 
         self.V = word_ct_array.shape[0]  
 
@@ -146,11 +152,7 @@ class LDASmoothed:
 
                 for n in range(Nd): 
 
-                    word = self.docs[d][n]
-                    word:str 
-
-                    vocab_idx = self.word_2_idx[word]
-                    vocab_idx:int 
+                    vocab_idx = self.docs_v_idx[d][n]
 
                     for k in range(self.K):
 
@@ -178,9 +180,7 @@ class LDASmoothed:
                     tr.from_numpy(self._phi_[:][:][k]).double()
                 )    
 
-            
-
-                gamma[d] = self._alpha_ + self.word_ct_array[:,d]
+            gamma[d] = self._alpha_ + self.word_ct_array[:,d]
 
             delta_gamma = self._gamma_ - gamma
             l2_delta_gamma = tr.norm(delta_gamma)

@@ -12,6 +12,8 @@ from src.utils import (
     compute_elbo,
 )
 
+from pprint import pprint
+
 SEED = 42
 DTYPE = tr.double 
 
@@ -34,7 +36,6 @@ class LDASmoothed:
             word_ct_array: np.ndarray = None,
             verbose: bool = True,
         ) -> None:
-
 
         assert get_vocab_from_docs(docs) == word_ct_dict
 
@@ -59,14 +60,12 @@ class LDASmoothed:
         self.word_2_idx = word_2_idx 
         self.word_2_idx:dict 
 
+        if verbose: 
+            print(f"Word mapping to vocab index is: ")
+            pprint(self.word_2_idx)
+
         self.idx_2_word = {v:k for k,v in self.word_2_idx.items()}
         self.idx_2_word: dict
-
-        # gather the docs in it's vocab index form 
-        self.docs_v_idx = self.docs.copy()
-        for id, d in enumerate(docs): 
-            for n in range(len(d)): 
-                self.docs_v_idx[id][n] = self.docs[docs[id][n]]
 
         # number of unique words in the corpus 
         self.V = word_ct_array.shape[0]  
@@ -80,6 +79,7 @@ class LDASmoothed:
         self._alpha_ = np.random.gamma(100, 0.01, (1,self.K))
         self._alpha_ = tr.from_numpy(self._alpha_)
         self._alpha_ = self._alpha_.double()
+        self._alpha_ = self._alpha_.flatten()
 
         if verbose:
             print(f"Topic Dirichlet Prior, Alpha")
@@ -88,6 +88,7 @@ class LDASmoothed:
             print() 
         # Dirichlet Prior - Exchangeable Dirichlet
         self._eta_ = tr.ones(1,self.V, dtype=DTYPE)
+        self._eta_ = self._eta_.flatten()
 
         if verbose:
             print(f"Word Dirichlet Prior, Eta")
@@ -116,16 +117,20 @@ class LDASmoothed:
             print()
 
         #Multinomial Prior, Surrogate for Theta vector drawn from Dirichlet(Alpha)
-        _phi_ = []
-        for d in range(self.M): 
-            _phi_.append(np.ones((len(docs[d]),self.K)) * (1/self. K))
+        phi = tr.zeros(len(docs),self.word_ct_array.shape[0],num_topics)
 
-        self._phi_ = np.array(_phi_, dtype=object)
+        for id, d in enumerate(docs): 
+            for word in d: 
+
+                v = self.word_2_idx[word]
+                phi[id][v] = 1/self.K
+
+        self._phi_ = phi.double()
 
         if verbose: 
             print(f"Var -Inf - Word wise Topic Multinomial/Categorical, Phi")
             print(self._phi_.shape)
-            print(_phi_)
+            print(self._phi_)
 
 
     def e_step(self, threshold:float = 1e-08, verbose:bool = True,) -> None: 
@@ -142,39 +147,36 @@ class LDASmoothed:
 
             gamma = self._gamma_.clone()
             
-            # Update Phi
+            ### Update Phi[d][v][k] ###
             for d in range(self.M): 
-
-                phi_d = np_obj_2_tr(self._phi_[d])
-                Nd = phi_d.shape[0]
-
                 EqThetaD = expec_log_dirichlet(self._gamma_[d])
+                for v in range(self.V): 
 
-                for n in range(Nd): 
+                    #if word v is not in document d, we continue to the next one 
+                    if self._phi_[d][v].sum() == 0:
+                        continue
+                    elif round(self._phi_[d][v].sum().item()) == 1:
+                        for k in range(self.K):
 
-                    vocab_idx = self.docs_v_idx[d][n]
+                            EqBetak = expec_log_dirichlet(self._lambda_[k])
 
-                    for k in range(self.K):
+                            self._phi_[d][v][k] = tr.exp(EqThetaD[k] + EqBetak[v])
+                    else:
+                        raise ValueError(f"Sum of the multinomial parameters at document {d} and word {v} not eual to one, instead found {self._phi_[d][v]}")
 
-                        EqBetak = expec_log_dirichlet(self._lambda_[k])
+                    ## -- normalisation -- ## 
+                    self._phi_[d][v] = self._phi_[d][v]/tr.sum(self._phi_[d][v])
 
-                        phi_d[n][k] = tr.exp(EqThetaD[k] + EqBetak[vocab_idx])
-                        self._phi_[d][n][k] = phi_d[n][k].numpy()
-
-                # normalisation 
-                self._phi_[d][n] = self._phi_[d][n]/np.sum(self._phi_[d][n])
-
-            # Update Lambda 
-            for v in range(self.V): 
-
-
+            ### Update Lambda[k][v] ###
+            for k in range(self.K):
+                for v in range(self.V):
+                    self._lambda_[k][v] = self._eta_[v] + tr.dot(self.word_ct_array[v], self._phi_[:,v,k])    
+            
+            ### Update Gamma[d][k] ###
+            for d in range(self.M): 
                 for k in range(self.K):
-                    self._lambda_[k][v] += tr.dot(
-                        self.word_ct_array[v], 
-                        tr.from_numpy(self._phi_[:][:][k]).double()
-                    )    
+                    gamma[d][k] = self._alpha_[k] + tr.dot(self.word_ct_array[:,d],self._phi_[d,:,k])
 
-            gamma[d] = self._alpha_ + self.word_ct_array[:,d]
 
             delta_gamma = self._gamma_ - gamma
             l2_delta_gamma = tr.norm(delta_gamma)

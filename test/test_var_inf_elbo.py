@@ -192,7 +192,7 @@ def var_inf_part1_doc_level_mirror(
 
         #print(val_delta)
 
-    #print(term1+term4, term2+term5, term3)
+    print(term1+term4, term2+term5, term3)
 
     return term1 + term2 + term3 + term4 + term5 
 
@@ -224,7 +224,7 @@ def input3_():
                     [0.3, 0.3, 0.4], # document all words is at first vocab
                 ],
                 [
-                    [0.2, 0.2, 0.8], # document words is at the first 8 vocabs
+                    [0.3, 0.3, 0.4], # document words is at the first 8 vocabs
                     [0.2, 0.2, 0.8],    
                     [0.2, 0.2, 0.8],
                     [0.2, 0.2, 0.8], 
@@ -234,6 +234,34 @@ def input3_():
                     [0.2, 0.2, 0.8],
                 ],
             ], dtype=object
+        ),
+        '_phi_v':np.array(
+            [
+                [
+                    [0.3,0.3,0.4],#0
+                    [0.0,0.0,0.0],#1
+                    [0.0,0.0,0.0],#2
+                    [0.0,0.0,0.0],#3
+                    [0.0,0.0,0.0],#4
+                    [0.0,0.0,0.0],#5
+                    [0.0,0.0,0.0],#6
+                    [0.0,0.0,0.0],#7
+                    [0.0,0.0,0.0],#8
+                    [0.0,0.0,0.0],#9
+                ],
+                [
+                    [0.3,0.3,0.4],#0
+                    [0.2,0.2,0.8],#1
+                    [0.2,0.2,0.8],#2
+                    [0.2,0.2,0.8],#3
+                    [0.2,0.2,0.8],#4
+                    [0.2,0.2,0.8],#5
+                    [0.2,0.2,0.8],#6
+                    [0.2,0.2,0.8],#7
+                    [0.0,0.0,0.0],#8
+                    [0.0,0.0,0.0],#9
+                ],
+            ], dtype=float
         ),
         '_gamma_':np.array(
             [
@@ -248,8 +276,8 @@ def input3_():
         ]),
         'docs': np.array(
             [
-                [0,0,0,0,0,],
-                [0,1,2,3,4,5,6,7,],
+                [0,0,0,0,0],
+                [0,1,2,3,4,5,6,7],
             ], dtype=object
         ),
         'w_ct':np.array(
@@ -317,13 +345,12 @@ def test_docs_part_ELBO(input3_):
     doc_elbo = elbo_doc_depend_part(
         tr.from_numpy(input3_['_alpha_']),
         tr.from_numpy(input3_['_gamma_']),
-        input3_['_phi_'],
+        tr.from_numpy(input3_['_phi_v']),
         tr.from_numpy(input3_['_lambda_']),
         tr.from_numpy(input3_['w_ct']),
-        input3_['docs'],
     )
 
-    assert doc_elbo_mirror == doc_elbo
+    assert round(doc_elbo_mirror,5) == round(doc_elbo,5)
 
 
     corpus_eblo_mirror = var_inf_part2_corpus_level_mirror(
@@ -336,12 +363,11 @@ def test_docs_part_ELBO(input3_):
 
     elbo = compute_elbo(
         tr.from_numpy(input3_['_gamma_']),
-        input3_['_phi_'],
+        tr.from_numpy(input3_['_phi_v']),
         tr.from_numpy(input3_['_lambda_']),
         tr.from_numpy(input3_['_alpha_']),
         tr.from_numpy(input3_['_eta_']),
         tr.from_numpy(input3_['w_ct']),
-        input3_['docs'],
     )
 
     elbo_mirror = doc_elbo_mirror + corpus_eblo_mirror

@@ -167,18 +167,12 @@ class LDASmoothed:
             # Update Lambda 
             for v in range(self.V): 
 
-                ###
-                # loop through all document 
-                
-                # -> array: given v and k , find the 
-                # position of word v in document d, if not appeared, return 
 
-                ###
-
-                self._lambda_[k][v] += tr.dot(
-                    self.word_ct_array[v], 
-                    tr.from_numpy(self._phi_[:][:][k]).double()
-                )    
+                for k in range(self.K):
+                    self._lambda_[k][v] += tr.dot(
+                        self.word_ct_array[v], 
+                        tr.from_numpy(self._phi_[:][:][k]).double()
+                    )    
 
             gamma[d] = self._alpha_ + self.word_ct_array[:,d]
 

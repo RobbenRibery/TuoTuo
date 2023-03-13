@@ -193,10 +193,10 @@ class LDASmoothed:
             self._gamma_ = gamma
     
 
-    def m_step(self,): 
+    def m_step(self, step: int = 100, threshold:float = 1e-08, verbose:bool = True,) -> None: 
 
-
-        return None 
+        self.update_alpha(step, threshold, verbose)
+        self.update_eta(step, threshold, verbose)
 
 
     def update_alpha(self, step:int = 100, threshold:float = 1e-08, verbose:bool = True,) -> None: 
@@ -278,6 +278,17 @@ class LDASmoothed:
         warnings.warn(f"Maximum iteration reached at step {it}")
 
 
+    #TODO 
+    def fit(self,):
+
+
+        return None  
+    
+
+
+    def predict(self,): 
+
+        return None
 
 
 

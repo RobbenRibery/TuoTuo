@@ -1,4 +1,5 @@
 from typing import List, Dict
+import warnings 
 
 import torch as tr 
 import numpy as np 
@@ -133,7 +134,7 @@ class LDASmoothed:
             print(self._phi_)
 
 
-    def e_step(self, threshold:float = 1e-08, verbose:bool = True,) -> None: 
+    def e_step(self, threshold:float = 1e-09, verbose:bool = True,) -> None: 
 
         delta_gamma =  tr.full(self._gamma_.shape, fill_value=tr.inf)
         l2_delta_gamma = tr.norm(delta_gamma)
@@ -143,8 +144,16 @@ class LDASmoothed:
 
             if verbose: 
                 i+= 1 
-                print(f'Iteration {i}, Delta Gamma = {l2_delta_gamma.item()}')
-
+                elbo = compute_elbo(
+                    self._gamma_,
+                    self._phi_,
+                    self._lambda_,
+                    self._alpha_,
+                    self._eta_,
+                    self.word_ct_array
+                )
+                print(f'Iteration {i}, Delta Gamma = {l2_delta_gamma.item()}, the ELBO is {elbo}')
+    
             gamma = self._gamma_.clone()
             
             ### Update Phi[d][v][k] ###
@@ -188,3 +197,96 @@ class LDASmoothed:
 
 
         return None 
+
+
+    def update_alpha(self, step:int = 100, threshold:float = 1e-08, verbose:bool = True,) -> None: 
+
+        it = 0 
+
+        while it <= step: 
+
+            sum_ = tr.sum(self._alpha_)
+
+            # grad in R 1*K
+            g = self.M * (tr.digamma(sum_)-tr.digamma(self._alpha_)) + \
+                tr.sum(tr.digamma(self._gamma_), dim=0) - \
+                tr.sum(tr.digamma(tr.sum(self._gamma_, dim=1)))
+            
+            # hessian diagonal vector in R 1*K 
+            h = - self.M * tr.polygamma(1, self._alpha_)
+
+            # hessian constant part 
+            z = self.M * tr.polygamma(1, tr.sum(self._alpha_))
+
+            # offset c 
+            c = tr.sum(g/h) / ((1/z)+tr.sum(1/h))
+
+            # newton step s
+            update = (g-c)/h 
+
+            alpha_new = self._alpha_ - update 
+
+            delta = tr.norm(alpha_new-self._alpha_) 
+
+            if verbose: 
+                print(f"Iteration {it}, Delta Alpha = {delta}")
+
+            self._alpha_ = alpha_new
+            it += 1 
+
+            if delta < threshold: 
+                return 
+            
+        warnings.warn(f"Maximum iteration reached at step {it}")
+
+    def update_eta(self, step:int = 100, threshold:float = 1e-08, verbose:bool = True) -> None:
+        
+        it = 0 
+        while it <= step: 
+            
+            # gradient 
+            g = self.K * (tr.digamma(tr.sum(self._eta_)) - tr.digamma(self._eta_)) + \
+                tr.sum(tr.digamma(self._lambda_), dim=0) - tr.sum(tr.digamma(tr.sum(self._lambda_, dim=1)))
+            
+            print(g)
+
+            # h hessian diagonal 
+            h = - self.K * tr.polygamma(1, self._eta_)
+
+            # hessain constant part 
+            z = self.K * tr.polygamma(1, tr.sum(self._eta_))
+
+            # offet c 
+            c = tr.sum(g/h) / ((1/z)+tr.sum(1/h))
+
+            # newton step 
+            update = (g-c)/h  
+
+            eta_new = self._eta_ - update 
+
+            delta = tr.norm(eta_new - self._eta_) 
+
+            if verbose: 
+                print(f"Iteration {it}, Delta Alpha = {delta}")
+
+            self._eta_ = eta_new 
+            it += 1 
+            
+            if delta < threshold: 
+                return 
+
+        warnings.warn(f"Maximum iteration reached at step {it}")
+
+
+
+
+
+
+
+            
+
+
+
+
+
+

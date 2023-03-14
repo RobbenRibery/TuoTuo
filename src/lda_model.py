@@ -134,16 +134,15 @@ class LDASmoothed:
             print(self._phi_)
 
 
-    def e_step(self, threshold:float = 1e-09, verbose:bool = True,) -> None: 
+    def e_step(self, step:int = 500, threshold:float = 1e-08, verbose:bool = True,) -> None: 
 
         delta_gamma =  tr.full(self._gamma_.shape, fill_value=tr.inf)
         l2_delta_gamma = tr.norm(delta_gamma)
 
-        i = 0 
-        while l2_delta_gamma > threshold:
+        it = 0 
+        while it < step:
 
             if verbose: 
-                i+= 1 
                 elbo = compute_elbo(
                     self._gamma_,
                     self._phi_,
@@ -152,7 +151,7 @@ class LDASmoothed:
                     self._eta_,
                     self.word_ct_array
                 )
-                print(f'Iteration {i}, Delta Gamma = {l2_delta_gamma.item()}, the ELBO is {elbo}')
+                print(f'Iteration {it}, Delta Gamma = {l2_delta_gamma.item()}, the ELBO is {elbo}')
     
             gamma = self._gamma_.clone()
             
@@ -175,6 +174,7 @@ class LDASmoothed:
 
                     ## -- normalisation -- ## 
                     self._phi_[d][v] = self._phi_[d][v]/tr.sum(self._phi_[d][v])
+                    #print(f"{d} -> {self.idx_2_word[v]} -> {self._phi_[d][v]}")
 
             ### Update Lambda[k][v] ###
             for k in range(self.K):
@@ -190,16 +190,26 @@ class LDASmoothed:
             delta_gamma = self._gamma_ - gamma
             l2_delta_gamma = tr.norm(delta_gamma)
 
+            if l2_delta_gamma < threshold: 
+                return 
+
             self._gamma_ = gamma
+            it += 1 
+
+        warnings.warn(f"Update phi, lambda, gamma: Maximum iteration reached at step {it}")
     
 
-    def m_step(self, step: int = 100, threshold:float = 1e-08, verbose:bool = True,) -> None: 
+    def m_step(self, step: int = 100, threshold:float = 1e-09, verbose:bool = True,) -> None: 
 
         self.update_alpha(step, threshold, verbose)
         self.update_eta(step, threshold, verbose)
 
 
-    def update_alpha(self, step:int = 100, threshold:float = 1e-08, verbose:bool = True,) -> None: 
+    def update_alpha(self, step:int = 500, threshold:float = 1e-09, verbose:bool = True,) -> None: 
+
+        """Newton-Raphson in Linear Time for the sepcial Hessian with 
+        Diag(h) + 1z1T
+        """
 
         it = 0 
 
@@ -229,7 +239,15 @@ class LDASmoothed:
             delta = tr.norm(alpha_new-self._alpha_) 
 
             if verbose: 
-                print(f"Iteration {it}, Delta Alpha = {delta}")
+                elbo = compute_elbo(
+                    self._gamma_,
+                    self._phi_,
+                    self._lambda_,
+                    self._alpha_,
+                    self._eta_,
+                    self.word_ct_array
+                )
+                print(f"Iteration {it}, Delta Alpha = {delta} elbo is {elbo}")
 
             self._alpha_ = alpha_new
             it += 1 
@@ -237,9 +255,14 @@ class LDASmoothed:
             if delta < threshold: 
                 return 
             
-        warnings.warn(f"Maximum iteration reached at step {it}")
+        warnings.warn(f"Update alphda Maximum iteration reached at step {it}")
 
-    def update_eta(self, step:int = 100, threshold:float = 1e-08, verbose:bool = True) -> None:
+    def update_eta(self, step:int = 500, threshold:float = 1e-09, verbose:bool = True) -> None:
+
+
+        """Newton-Raphson in Linear Time for the sepcial Hessian with 
+        Diag(h) + 1z1T
+        """
         
         it = 0 
         while it <= step: 
@@ -247,8 +270,6 @@ class LDASmoothed:
             # gradient 
             g = self.K * (tr.digamma(tr.sum(self._eta_)) - tr.digamma(self._eta_)) + \
                 tr.sum(tr.digamma(self._lambda_), dim=0) - tr.sum(tr.digamma(tr.sum(self._lambda_, dim=1)))
-            
-            print(g)
 
             # h hessian diagonal 
             h = - self.K * tr.polygamma(1, self._eta_)
@@ -267,7 +288,15 @@ class LDASmoothed:
             delta = tr.norm(eta_new - self._eta_) 
 
             if verbose: 
-                print(f"Iteration {it}, Delta Alpha = {delta}")
+                elbo = compute_elbo(
+                    self._gamma_,
+                    self._phi_,
+                    self._lambda_,
+                    self._alpha_,
+                    self._eta_,
+                    self.word_ct_array
+                )
+                print(f"Iteration {it}, Delta Alpha = {delta}, elbo is {elbo}")
 
             self._eta_ = eta_new 
             it += 1 
@@ -275,15 +304,54 @@ class LDASmoothed:
             if delta < threshold: 
                 return 
 
-        warnings.warn(f"Maximum iteration reached at step {it}")
+        warnings.warn(f"Update Eta: Maximum iteration reached at step {it}")
 
+    def fit(self, step:int = 5000, threshold:float = 1e-5, verbose:bool = False, neg_delta_patience:int = 5):
+        
+        it = 0
+        neg_delta = 0
 
-    #TODO 
-    def fit(self,):
+        while it < step: 
 
+            elbo = compute_elbo(
+                self._gamma_,
+                self._phi_,
+                self._lambda_,
+                self._alpha_,
+                self._eta_,
+                self.word_ct_array
+            )
+            if it == 0: 
+                print(f'Training started -> ELBO at init is :{elbo}')
 
-        return None  
+            self.e_step(step, threshold, verbose=verbose)
+            self.m_step(100, threshold, verbose=verbose)
+
+            elbo_hat = compute_elbo(
+                self._gamma_,
+                self._phi_,
+                self._lambda_,
+                self._alpha_,
+                self._eta_,
+                self.word_ct_array
+            )
+            
+            delta_elbo = elbo_hat - elbo 
+            #print(f"Iteration {it}, improve on ELBO is {delta_elbo}")
+
+            if delta_elbo < 0: 
+                neg_delta += 1 
+
+            if neg_delta > neg_delta_patience: 
+                warnings.warn(f"Elbo decereases for {neg_delta} times")
+
+            if delta_elbo > 0 and delta_elbo < threshold: 
+                print(f'ELBO converged at {it} -> ELBO:{elbo_hat}')
+                return 
+            
+            it += 1 
     
+        warnings.warn(f"Maximum iteration reached at {it} -> ELBO: {elbo_hat}")
 
 
     def predict(self,): 

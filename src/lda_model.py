@@ -353,6 +353,8 @@ class LDASmoothed:
     
         warnings.warn(f"Maximum iteration reached at {it} -> ELBO: {elbo_hat}")
 
+        return self 
+ 
 
     def predict(self,): 
 

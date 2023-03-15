@@ -1,10 +1,80 @@
 import torch as tr 
 import numpy as np 
+import pandas as pd 
 from scipy.special import gammaln, psi 
 
+from src.text_pre_processor import (
+    remove_accented_chars, 
+    remove_special_characters, 
+    remove_punctuation,
+    remove_extra_whitespace_tabs,
+    remove_stopwords 
+)
+
 from typing import List, Dict, Union
+from collections import defaultdict 
 
 DTYPE = tr.double
+
+def data_loader(dataset_name:str): 
+
+    if dataset_name == 'ap': 
+
+        file = open('../data/ap/ap.txt', 'r+',)
+
+        docs_raw = defaultdict(str)
+        index_of_doc = None 
+        ave_length = 0
+        for i, line in enumerate(file):   
+
+            if '<DOCNO>' in line: 
+
+                key = line.strip('</DOCNO>').strip('</DOCNO>\n').strip(' ')
+                index_of_doc = i
+
+            if index_of_doc is not None:
+                if i == index_of_doc + 2: 
+
+                    assert i%3 == 0 
+                    
+                    if key in docs_raw: 
+                        print(f'Duplicated keys detected at {key}')
+
+                    docs_raw[key] = line 
+                    ave_length += len(line.split(' '))
+
+        print(f"There are {len(docs_raw)} documents in the dataset")
+        print(f"On average estimated document length is {ave_length/len(docs_raw)} words per document")
+
+        word_2_idx = {}
+        vocab_file = open('../data/ap/vocab.txt','r+')
+        for i, line in enumerate(vocab_file):
+            word_2_idx[line.strip('\n')] = i
+
+        print(f"There are {len(word_2_idx)} unique vocab in the RAW Associate Press Dataset")
+
+        idx_2_word = {v:k for k,v in word_2_idx.items()}
+
+        return docs_raw, word_2_idx, idx_2_word
+
+
+def text_pipeline(s:str) -> str: 
+
+    #print(len(text))
+    s1 = remove_accented_chars(s)
+
+    #print(len(s1))
+    s1 = remove_special_characters(s1)
+
+    #print(len(s1))
+    s1 = remove_punctuation(s1)
+    #print(len(s1))
+
+    s1 = remove_extra_whitespace_tabs(s1)
+    #print(len(s1))
+    return s1 
+
+
 
 def expec_log_dirichlet(dirichlet_parm:tr.Tensor,) -> tr.Tensor: 
 

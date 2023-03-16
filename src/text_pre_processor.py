@@ -28,7 +28,7 @@ def remove_accented_chars(text):
 def remove_special_characters(text):
     # define the pattern to keep
     pat = r"[^a-zA-z0-9.,!?/:;\"\'\s]"
-    return re.sub(pat, '', text)
+    return re.sub(pat, ' ', text)
 
 # function to remove numbers
 def remove_numbers(text):
@@ -75,6 +75,8 @@ def text_pipline(text, forbidden_list):
     t1 = remove_special_characters(t1)
     t1 = remove_numbers(t1)
     t1 = remove_punctuation(t1)
+
+    
    
     #t1_6 = get_lem(t1_4)
     t1 = remove_stopwords(t1) 

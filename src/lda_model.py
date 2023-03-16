@@ -20,7 +20,7 @@ DTYPE = tr.double
 
 class LDASmoothed: 
 
-    """Class implemented the 
+    """Class implemented the Smoothed Version of Latent Dirichlet Allocation
 
     - Parameters init 
     - Training 
@@ -35,6 +35,8 @@ class LDASmoothed:
             num_topics: int,
             word_ct_dict: dict,
             word_ct_array: np.ndarray = None,
+            word_to_idx: dict = None, 
+            idx_to_word: dict = None, 
             verbose: bool = True,
         ) -> None:
 
@@ -61,10 +63,6 @@ class LDASmoothed:
         self.word_2_idx = word_2_idx 
         self.word_2_idx:dict 
 
-        if verbose: 
-            print(f"Word mapping to vocab index is: ")
-            pprint(self.word_2_idx)
-
         self.idx_2_word = {v:k for k,v in self.word_2_idx.items()}
         self.idx_2_word: dict
 
@@ -85,7 +83,6 @@ class LDASmoothed:
         if verbose:
             print(f"Topic Dirichlet Prior, Alpha")
             print(self._alpha_.shape)
-            print(self._alpha_)
             print() 
         # Dirichlet Prior - Exchangeable Dirichlet
         self._eta_ = tr.ones(1,self.V, dtype=DTYPE)
@@ -94,7 +91,6 @@ class LDASmoothed:
         if verbose:
             print(f"Word Dirichlet Prior, Eta")
             print(self._eta_.shape)
-            print(self._eta_)
             print()
 
 
@@ -104,7 +100,6 @@ class LDASmoothed:
         if verbose: 
             print(f"Var Inf - Word Dirichlet prior, Lambda")
             print(self._lambda_.shape)
-            print(self._lambda_)
             print()
 
         #Dirichlet Prior, Surrogate for _alpha_ 
@@ -114,27 +109,27 @@ class LDASmoothed:
         if verbose: 
             print(f"Var Inf - Topic Dirichlet prior, Gamma")
             print(self._gamma_.shape)
-            print(self._gamma_)
             print()
 
         #Multinomial Prior, Surrogate for Theta vector drawn from Dirichlet(Alpha)
         phi = tr.zeros(len(docs),self.word_ct_array.shape[0],num_topics)
 
+        print('loop phi')
         for id, d in enumerate(docs): 
             for word in d: 
 
                 v = self.word_2_idx[word]
                 phi[id][v] = 1/self.K
-
+        
+        print('looped')
         self._phi_ = phi.double()
-
+        print('double')
         if verbose: 
             print(f"Var -Inf - Word wise Topic Multinomial/Categorical, Phi")
             print(self._phi_.shape)
-            print(self._phi_)
 
 
-    def e_step(self, step:int = 500, threshold:float = 1e-08, verbose:bool = True,) -> None: 
+    def e_step(self, step:int = 100, threshold:float = 1e-07, verbose:bool = True,) -> None: 
 
         delta_gamma =  tr.full(self._gamma_.shape, fill_value=tr.inf)
         l2_delta_gamma = tr.norm(delta_gamma)
@@ -199,13 +194,13 @@ class LDASmoothed:
         warnings.warn(f"Update phi, lambda, gamma: Maximum iteration reached at step {it}")
     
 
-    def m_step(self, step: int = 100, threshold:float = 1e-09, verbose:bool = True,) -> None: 
+    def m_step(self, step: int = 100, threshold:float = 1e-07, verbose:bool = True,) -> None: 
 
         self.update_alpha(step, threshold, verbose)
         self.update_eta(step, threshold, verbose)
 
 
-    def update_alpha(self, step:int = 500, threshold:float = 1e-09, verbose:bool = True,) -> None: 
+    def update_alpha(self, step:int = 500, threshold:float = 1e-07, verbose:bool = True,) -> None: 
 
         """Newton-Raphson in Linear Time for the sepcial Hessian with 
         Diag(h) + 1z1T
@@ -257,7 +252,7 @@ class LDASmoothed:
             
         warnings.warn(f"Update alphda Maximum iteration reached at step {it}")
 
-    def update_eta(self, step:int = 500, threshold:float = 1e-09, verbose:bool = True) -> None:
+    def update_eta(self, step:int = 100, threshold:float = 1e-07, verbose:bool = True) -> None:
 
 
         """Newton-Raphson in Linear Time for the sepcial Hessian with 
@@ -306,7 +301,7 @@ class LDASmoothed:
 
         warnings.warn(f"Update Eta: Maximum iteration reached at step {it}")
 
-    def fit(self, step:int = 5000, threshold:float = 1e-5, verbose:bool = False, neg_delta_patience:int = 5):
+    def fit(self, step:int = 100, threshold:float = 1e-5, verbose:bool = False, neg_delta_patience:int = 5):
         
         it = 0
         neg_delta = 0
@@ -321,11 +316,12 @@ class LDASmoothed:
                 self._eta_,
                 self.word_ct_array
             )
+            print(f"{it}->ELBO {elbo}")
             if it == 0: 
                 print(f'Training started -> ELBO at init is :{elbo}')
 
-            self.e_step(step, threshold, verbose=verbose)
-            self.m_step(100, threshold, verbose=verbose)
+            self.e_step(step, threshold, verbose=True)
+            self.m_step(step, threshold, verbose=True)
 
             elbo_hat = compute_elbo(
                 self._gamma_,

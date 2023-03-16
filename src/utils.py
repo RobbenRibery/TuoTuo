@@ -11,12 +11,13 @@ from src.text_pre_processor import (
     remove_stopwords 
 )
 
+import copy 
 from typing import List, Dict, Union
 from collections import defaultdict 
 
 DTYPE = tr.double
 
-def data_loader(dataset_name:str): 
+def data_loader(dataset_name:str, ): 
 
     if dataset_name == 'ap': 
 
@@ -51,7 +52,7 @@ def data_loader(dataset_name:str):
         for i, line in enumerate(vocab_file):
             word_2_idx[line.strip('\n')] = i
 
-        print(f"There are {len(word_2_idx)} unique vocab in the RAW Associate Press Dataset")
+        print(f"There are {len(word_2_idx)} unique vocab in the raw corpus")
 
         idx_2_word = {v:k for k,v in word_2_idx.items()}
 
@@ -61,19 +62,63 @@ def data_loader(dataset_name:str):
 def text_pipeline(s:str) -> str: 
 
     #print(len(text))
-    s1 = remove_accented_chars(s)
+    s = remove_accented_chars(s)
 
     #print(len(s1))
-    s1 = remove_special_characters(s1)
+    s = remove_special_characters(s)
 
     #print(len(s1))
-    s1 = remove_punctuation(s1)
+    s = remove_punctuation(s)
     #print(len(s1))
+    s = remove_extra_whitespace_tabs(s)
 
-    s1 = remove_extra_whitespace_tabs(s1)
+    s = remove_stopwords(s)
     #print(len(s1))
-    return s1 
+    return s
 
+
+def process_documents(doc_dict:dict, sample:bool = True,): 
+
+    proc_doc_dict = copy.deepcopy(doc_dict)
+
+    length = 0
+    for k, v in doc_dict.items(): 
+
+        new_text = text_pipeline(v)
+        new_text_list = new_text.split(' ')
+        proc_doc_dict[k] = new_text_list if not sample else new_text_list[:10]
+
+        length += len(proc_doc_dict[k])
+
+    docs_list = list(proc_doc_dict.values()) if not sample else list(proc_doc_dict.values())[:300]
+
+    print(f"There are {len(docs_list)} documents in the dataset after processing")
+    print(f"On average estimated document length is {round(length/len(doc_dict),1)} words per document after processing")
+
+    #print(len(docs_list))
+    word_ct_dict = get_vocab_from_docs(docs_list)
+    word_ct_dict:dict[List]
+    #print(len(word_ct_dict))
+
+    word_ct_np, word_2_idx = get_np_wct(word_ct_dict, docs_list)
+    word_ct_np:np.ndarray
+    word_2_idx:dict[int]
+
+    assert len(word_ct_dict) == word_ct_np.shape[0]
+    assert len(word_ct_dict) == len(word_2_idx)
+    assert len(docs_list) == word_ct_np.shape[1]
+
+    print(f"There are {len(word_2_idx)} unique vocab in the corpus after processing")
+
+    idx_2_word = {v:k for k,v in word_2_idx.items()} 
+
+    return {
+        'documents':docs_list,
+        'vocab_doc_count_dict': word_ct_dict,
+        'vocab_doc_count_array': word_ct_np,
+        'vocab_to_idx': word_2_idx,
+        'idx_to_vocab':idx_2_word,
+    }
 
 
 def expec_log_dirichlet(dirichlet_parm:tr.Tensor,) -> tr.Tensor: 

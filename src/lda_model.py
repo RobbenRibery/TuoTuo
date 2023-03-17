@@ -301,7 +301,7 @@ class LDASmoothed:
 
         warnings.warn(f"Update Eta: Maximum iteration reached at step {it}")
 
-    def fit(self, step:int = 100, threshold:float = 1e-5, verbose:bool = False, neg_delta_patience:int = 5):
+    def fit(self, step:int = 500, threshold:float = 1e-5, verbose:bool = False, neg_delta_patience:int = 5):
         
         it = 0
         neg_delta = 0
@@ -316,12 +316,12 @@ class LDASmoothed:
                 self._eta_,
                 self.word_ct_array
             )
-            print(f"{it}->ELBO {elbo}")
+            #print(f"{it}->ELBO {elbo}")
             if it == 0: 
                 print(f'Training started -> ELBO at init is :{elbo}')
 
-            self.e_step(step, threshold, verbose=True)
-            self.m_step(step, threshold, verbose=True)
+            self.e_step(step, threshold, verbose=False)
+            self.m_step(step, threshold, verbose=False)
 
             elbo_hat = compute_elbo(
                 self._gamma_,
@@ -347,7 +347,7 @@ class LDASmoothed:
             
             it += 1 
     
-        warnings.warn(f"Maximum iteration reached at {it} -> ELBO: {elbo_hat}")
+        print(f"Maximum iteration reached at {it} -> ELBO: {elbo_hat}")
 
         return self 
  

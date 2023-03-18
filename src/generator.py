@@ -254,7 +254,7 @@ class doc_generator:
 
     def generate_doc(self,) -> List[List[int]]:
 
-        l = [5, 10, 5]
+        l = [10, 10, 10]
 
         docs = {}
         for d in range(self.theta.shape[0]): 

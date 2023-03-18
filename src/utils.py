@@ -1,7 +1,7 @@
 import torch as tr 
 import numpy as np 
 import pandas as pd 
-from scipy.special import gammaln, psi 
+from scipy.special import gammaln
 
 from src.text_pre_processor import (
     remove_accented_chars, 
@@ -219,7 +219,7 @@ def compute_elbo(
 
 
 def eblo_corpus_part(
-        _eta_: tr.Tensor,
+        _eta_: float,
         _lambda_: tr.Tensor, 
         _alpha_:tr.Tensor, 
         n_docs:int,
@@ -232,22 +232,21 @@ def eblo_corpus_part(
     else:
         K = len(_alpha_) 
 
+    V = _lambda_.shape[0]
 
     # part 2, the global part of the ELBO, this part of the parameters are shared across documnets 
     term2 = log_gamma_sum_term(_alpha_) * n_docs
+    term2 += K*(gammaln(V*_eta_) - V * gammaln(_eta_))
 
     for k in range(K): 
 
         k_sum_2 = 0 
-        k_sum_2 += log_gamma_sum_term(_eta_)
-
-        #print(_eta_ - _lambda_[k,:]) 
         k_sum_2 += tr.dot((_eta_ - _lambda_[k]).flatten(), expec_log_dirichlet(_lambda_[k]))
         k_sum_2 -= log_gamma_sum_term(_lambda_[k])
 
-        term2 += k_sum_2
+        term2 += k_sum_2.item()
 
-    return term2.item()
+    return term2
 
 
 def elbo_doc_depend_part(

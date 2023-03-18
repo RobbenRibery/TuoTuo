@@ -3,6 +3,7 @@ import warnings
 
 import torch as tr 
 import numpy as np 
+from scipy.special import psi, polygamma
 
 from src.utils import (
     get_vocab_from_docs, 
@@ -85,12 +86,11 @@ class LDASmoothed:
             print(self._alpha_.shape)
             print() 
         # Dirichlet Prior - Exchangeable Dirichlet
-        self._eta_ = tr.ones(1,self.V, dtype=DTYPE)
-        self._eta_ = self._eta_.flatten()
+        self._eta_ = 1
 
         if verbose:
-            print(f"Word Dirichlet Prior, Eta")
-            print(self._eta_.shape)
+            print(f"Exchangeable Word Dirichlet Prior, Eta ")
+            print(self._eta_)
             print()
 
 
@@ -103,6 +103,7 @@ class LDASmoothed:
             print()
 
         #Dirichlet Prior, Surrogate for _alpha_ 
+        self._gamma_ = self._alpha_ + self.V / self.K 
         self._gamma_ = self._alpha_ + self.V/self.K
         self._gamma_ = self._gamma_.expand(self.M,-1)
 
@@ -174,7 +175,7 @@ class LDASmoothed:
             ### Update Lambda[k][v] ###
             for k in range(self.K):
                 for v in range(self.V):
-                    self._lambda_[k][v] = self._eta_[v] + tr.dot(self.word_ct_array[v], self._phi_[:,v,k])    
+                    self._lambda_[k][v] = self._eta_ + tr.dot(self.word_ct_array[v], self._phi_[:,v,k])    
             
             ### Update Gamma[d][k] ###
             for d in range(self.M): 
@@ -230,6 +231,7 @@ class LDASmoothed:
             update = (g-c)/h 
 
             alpha_new = self._alpha_ - update 
+            print(f"{self._gamma_.sum()}|{self._alpha_} -> {alpha_new}")
 
             delta = tr.norm(alpha_new-self._alpha_) 
 
@@ -254,7 +256,6 @@ class LDASmoothed:
 
     def update_eta(self, step:int = 100, threshold:float = 1e-07, verbose:bool = True) -> None:
 
-
         """Newton-Raphson in Linear Time for the sepcial Hessian with 
         Diag(h) + 1z1T
         """
@@ -263,24 +264,22 @@ class LDASmoothed:
         while it <= step: 
             
             # gradient 
-            g = self.K * (tr.digamma(tr.sum(self._eta_)) - tr.digamma(self._eta_)) + \
-                tr.sum(tr.digamma(self._lambda_), dim=0) - tr.sum(tr.digamma(tr.sum(self._lambda_, dim=1)))
+            g = self.K * self.V * (psi(self.V * self._eta_) - psi(self._eta_)) + \
+                tr.sum(tr.digamma(self._lambda_)).item() - \
+                tr.sum(tr.digamma(tr.sum(self._lambda_, dim=1))).item()
 
             # h hessian diagonal 
-            h = - self.K * tr.polygamma(1, self._eta_)
-
-            # hessain constant part 
-            z = self.K * tr.polygamma(1, tr.sum(self._eta_))
-
-            # offet c 
-            c = tr.sum(g/h) / ((1/z)+tr.sum(1/h))
+            h = self.K * self.V * (polygamma(1, self.V * self._eta_) * self.V - polygamma(1,self._eta_))
 
             # newton step 
-            update = (g-c)/h  
+            update = g/h
 
             eta_new = self._eta_ - update 
-
-            delta = tr.norm(eta_new - self._eta_) 
+            #print(f"{self._eta_} -> {eta_new}")
+            #if eta_new < 0: 
+                #raise ValueError(f"Dirichelt Distribution parameter is positive, hoever dervired {eta_new} from orig {self._eta_} and -update {-update}")
+            delta = np.abs(eta_new - self._eta_)
+            #print()
 
             if verbose: 
                 elbo = compute_elbo(
@@ -291,7 +290,7 @@ class LDASmoothed:
                     self._eta_,
                     self.word_ct_array
                 )
-                print(f"Iteration {it}, Delta Alpha = {delta}, elbo is {elbo}")
+                print(f"Iteration {it}, Delta Eta = {delta}, elbo is {elbo}")
 
             self._eta_ = eta_new 
             it += 1 
@@ -316,9 +315,9 @@ class LDASmoothed:
                 self._eta_,
                 self.word_ct_array
             )
-            #print(f"{it}->ELBO {elbo}")
+            print(f"{it}-> mean ELBO {elbo/self.M}")
             if it == 0: 
-                print(f'Training started -> ELBO at init is :{elbo}')
+                print(f'Training started -> mean ELBO at init is :{elbo/self.M}')
 
             self.e_step(step, threshold, verbose=False)
             self.m_step(step, threshold, verbose=False)
@@ -342,19 +341,14 @@ class LDASmoothed:
                 warnings.warn(f"Elbo decereases for {neg_delta} times")
 
             if delta_elbo > 0 and delta_elbo < threshold: 
-                print(f'ELBO converged at {it} -> ELBO:{elbo_hat}')
+                print(f'ELBO converged at {it} -> mean ELBO:{elbo_hat/self.M}')
                 return 
             
             it += 1 
     
-        print(f"Maximum iteration reached at {it} -> ELBO: {elbo_hat}")
+        print(f"Maximum iteration reached at {it} -> mean ELBO: {elbo_hat/self.M}")
 
         return self 
- 
-
-    def predict(self,): 
-
-        return None
 
 
 

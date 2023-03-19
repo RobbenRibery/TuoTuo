@@ -1,14 +1,13 @@
 from typing import List, Dict
 import warnings 
 
-import torch as tr 
+import torch as np 
 import numpy as np 
 from scipy.special import psi, polygamma
 
 from src.utils import (
     get_vocab_from_docs, 
     get_np_wct, 
-    np_obj_2_tr,
     expec_log_dirichlet,
     log_gamma_sum_term, 
     compute_elbo,
@@ -16,15 +15,15 @@ from src.utils import (
 
 from pprint import pprint
 
-SEED = 42
-DTYPE = tr.double 
+SEED = 42 
+DTYPE = float
 
 class LDASmoothed: 
 
     """Class implemented the Smoothed Version of Latent Dirichlet Allocation
 
     - Parameters init 
-    - Training 
+    - npaining 
     - Inference 
 
     for smoothed version of Latent Dirichlet Allocation 
@@ -59,7 +58,7 @@ class LDASmoothed:
         else:
             word_ct_array, word_2_idx = get_np_wct(word_ct_dict, docs)
 
-        self.word_ct_array = tr.from_numpy(word_ct_array).double()
+        self.word_ct_array = word_ct_array
 
         self.word_2_idx = word_2_idx 
         self.word_2_idx:dict 
@@ -76,10 +75,9 @@ class LDASmoothed:
         #parameters init
         # define the DGM hyper-parameters
         # Dirichlet Prior 
-        self._alpha_ = np.random.gamma(100, 0.01, (1,self.K))
-        self._alpha_ = tr.from_numpy(self._alpha_)
-        self._alpha_ = self._alpha_.double()
-        self._alpha_ = self._alpha_.flatten()
+        np.random.seed(SEED)
+        self._alpha_ = np.random.gamma(shape = 100, scale = 0.01, size =self.K)
+        self._alpha_ = self._alpha_.ravel()
 
         if verbose:
             print(f"Topic Dirichlet Prior, Alpha")
@@ -96,24 +94,22 @@ class LDASmoothed:
 
         # define the Convexity-based Varitional Inference hyper-parameters 
         #Dirichlet Prior, Surrogate for _eta_ 
-        self._lambda_ = tr.ones(self.K, self.V, dtype=DTYPE)
+        np.random.seed(SEED)
+        self._lambda_ = np.random.gamma(shape=100, scale=0.01, size=(self.K, self.V),)
         if verbose: 
             print(f"Var Inf - Word Dirichlet prior, Lambda")
             print(self._lambda_.shape)
             print()
 
         #Dirichlet Prior, Surrogate for _alpha_ 
-        self._gamma_ = self._alpha_ + self.V / self.K 
-        self._gamma_ = self._alpha_ + self.V/self.K
-        self._gamma_ = self._gamma_.expand(self.M,-1)
-
+        self._gamma_ = self._alpha_ + np.ones((self.M,self.K), dtype=DTYPE) * len(docs[0]) / self.K 
         if verbose: 
             print(f"Var Inf - Topic Dirichlet prior, Gamma")
             print(self._gamma_.shape)
             print()
 
         #Multinomial Prior, Surrogate for Theta vector drawn from Dirichlet(Alpha)
-        phi = tr.zeros(len(docs),self.word_ct_array.shape[0],num_topics)
+        phi = np.zeros((len(docs),self.word_ct_array.shape[0],num_topics), dtype=DTYPE)
 
         print('loop phi')
         for id, d in enumerate(docs): 
@@ -123,17 +119,17 @@ class LDASmoothed:
                 phi[id][v] = 1/self.K
         
         print('looped')
-        self._phi_ = phi.double()
+        self._phi_ = phi
         print('double')
         if verbose: 
             print(f"Var -Inf - Word wise Topic Multinomial/Categorical, Phi")
             print(self._phi_.shape)
 
 
-    def e_step(self, step:int = 100, threshold:float = 1e-07, verbose:bool = True,) -> None: 
+    def e_step(self, step:int = 200, threshold:float = 1e-07, verbose:bool = False,) -> None: 
 
-        delta_gamma =  tr.full(self._gamma_.shape, fill_value=tr.inf)
-        l2_delta_gamma = tr.norm(delta_gamma)
+        delta_gamma =  np.full(self._gamma_.shape, fill_value=np.inf)
+        l2_delta_gamma = np.linalg.norm(delta_gamma)
 
         it = 0 
         while it < step:
@@ -147,12 +143,13 @@ class LDASmoothed:
                     self._eta_,
                     self.word_ct_array
                 )
-                print(f'Iteration {it}, Delta Gamma = {l2_delta_gamma.item()}, the ELBO is {elbo}')
+                print(f'Iteration {it}, Delta Gamma = {l2_delta_gamma}, the ELBO is {elbo}')
     
-            gamma = self._gamma_.clone()
+            gamma = np.copy(self._gamma_)
             
             ### Update Phi[d][v][k] ###
             for d in range(self.M): 
+                #print(d)
                 EqThetaD = expec_log_dirichlet(self._gamma_[d])
                 for v in range(self.V): 
 
@@ -164,27 +161,32 @@ class LDASmoothed:
 
                             EqBetak = expec_log_dirichlet(self._lambda_[k])
 
-                            self._phi_[d][v][k] = tr.exp(EqThetaD[k] + EqBetak[v])
+                            self._phi_[d][v][k] = np.exp(EqThetaD[k] + EqBetak[v])
                     else:
                         raise ValueError(f"Sum of the multinomial parameters at document {d} and word {v} not eual to one, instead found {self._phi_[d][v]}")
 
                     ## -- normalisation -- ## 
-                    self._phi_[d][v] = self._phi_[d][v]/tr.sum(self._phi_[d][v])
+                    self._phi_[d][v] /= np.sum(self._phi_[d][v])
+                    if np.isnan(self._phi_[d][v]).any():
+                        raise ValueError("phi nan")
+                    #print(self.idx_2_word[v])
+                    #print(self._phi_[d][v])
                     #print(f"{d} -> {self.idx_2_word[v]} -> {self._phi_[d][v]}")
 
             ### Update Lambda[k][v] ###
             for k in range(self.K):
                 for v in range(self.V):
-                    self._lambda_[k][v] = self._eta_ + tr.dot(self.word_ct_array[v], self._phi_[:,v,k])    
+                    self._lambda_[k][v] = self._eta_ + np.dot(self.word_ct_array[v], self._phi_[:,v,k])    
             
             ### Update Gamma[d][k] ###
             for d in range(self.M): 
                 for k in range(self.K):
-                    gamma[d][k] = self._alpha_[k] + tr.dot(self.word_ct_array[:,d],self._phi_[d,:,k])
+                    gamma[d][k] = self._alpha_[k] + np.dot(self.word_ct_array[:,d],self._phi_[d,:,k])
+                    ###print(self._gamma_[d][k], gamma[d][k])
 
 
             delta_gamma = self._gamma_ - gamma
-            l2_delta_gamma = tr.norm(delta_gamma)
+            l2_delta_gamma = np.linalg.norm(delta_gamma)
 
             if l2_delta_gamma < threshold: 
                 return 
@@ -195,13 +197,13 @@ class LDASmoothed:
         warnings.warn(f"Update phi, lambda, gamma: Maximum iteration reached at step {it}")
     
 
-    def m_step(self, step: int = 100, threshold:float = 1e-07, verbose:bool = True,) -> None: 
+    def m_step(self, step: int = 100, threshold:float = 1e-07, verbose:bool = False,) -> None: 
 
         self.update_alpha(step, threshold, verbose)
         self.update_eta(step, threshold, verbose)
 
 
-    def update_alpha(self, step:int = 500, threshold:float = 1e-07, verbose:bool = True,) -> None: 
+    def update_alpha(self, step:int = 500, threshold:float = 1e-07, verbose:bool = False,) -> None: 
 
         """Newton-Raphson in Linear Time for the sepcial Hessian with 
         Diag(h) + 1z1T
@@ -211,21 +213,21 @@ class LDASmoothed:
 
         while it <= step: 
 
-            sum_ = tr.sum(self._alpha_)
+            sum_ = np.sum(self._alpha_)
 
             # grad in R 1*K
-            g = self.M * (tr.digamma(sum_)-tr.digamma(self._alpha_)) + \
-                tr.sum(tr.digamma(self._gamma_), dim=0) - \
-                tr.sum(tr.digamma(tr.sum(self._gamma_, dim=1)))
+            g = self.M * (psi(sum_)-psi(self._alpha_)) + \
+                np.sum(psi(self._gamma_), axis=0) - \
+                np.sum(psi(np.sum(self._gamma_, axis=1)))
             
             # hessian diagonal vector in R 1*K 
-            h = - self.M * tr.polygamma(1, self._alpha_)
+            h = - self.M * polygamma(1, self._alpha_)
 
             # hessian constant part 
-            z = self.M * tr.polygamma(1, tr.sum(self._alpha_))
+            z = self.M * polygamma(1, np.sum(self._alpha_))
 
             # offset c 
-            c = tr.sum(g/h) / ((1/z)+tr.sum(1/h))
+            c = np.sum(g/h) / ((1/z)+np.sum(1/h))
 
             # newton step s
             update = (g-c)/h 
@@ -233,7 +235,7 @@ class LDASmoothed:
             alpha_new = self._alpha_ - update 
             print(f"{self._gamma_.sum()}|{self._alpha_} -> {alpha_new}")
 
-            delta = tr.norm(alpha_new-self._alpha_) 
+            delta = np.linalg.norm(alpha_new-self._alpha_) 
 
             if verbose: 
                 elbo = compute_elbo(
@@ -254,43 +256,36 @@ class LDASmoothed:
             
         warnings.warn(f"Update alphda Maximum iteration reached at step {it}")
 
-    def update_eta(self, step:int = 100, threshold:float = 1e-07, verbose:bool = True) -> None:
+    def update_eta(self, step:int = 1000, threshold:float = 1e-09, verbose:bool = False) -> None:
 
-        """Newton-Raphson in Linear Time for the sepcial Hessian with 
-        Diag(h) + 1z1T
+        """
+        Newton-Raphson in Linear Time 
+
         """
         
         it = 0 
         while it <= step: 
             
             # gradient 
-            g = self.K * self.V * (psi(self.V * self._eta_) - psi(self._eta_)) + \
-                tr.sum(tr.digamma(self._lambda_)).item() - \
-                tr.sum(tr.digamma(tr.sum(self._lambda_, dim=1))).item()
+            g = self.K * (self.V * psi(self.V * self._eta_) - self.V * psi(self._eta_)) + \
+                np.sum(psi(self._lambda_))- \
+                np.sum(self.V * psi(np.sum(self._lambda_, axis=1)))
 
             # h hessian diagonal 
-            h = self.K * self.V * (polygamma(1, self.V * self._eta_) * self.V - polygamma(1,self._eta_))
+            h = self.K * (
+                self.V**2 * polygamma(1, self.V * self._eta_) - \
+                self.V * polygamma(1,self._eta_)
+            )
 
             # newton step 
             update = g/h
 
             eta_new = self._eta_ - update 
-            #print(f"{self._eta_} -> {eta_new}")
+            print(f"{g} -> {h} | {self._eta_} -> {eta_new}")
             #if eta_new < 0: 
-                #raise ValueError(f"Dirichelt Distribution parameter is positive, hoever dervired {eta_new} from orig {self._eta_} and -update {-update}")
+                #raise ValueError(f"Dirichelt Disnpibution parameter is positive, hoever dervired {eta_new} from orig {self._eta_} and -update {-update}")
             delta = np.abs(eta_new - self._eta_)
             #print()
-
-            if verbose: 
-                elbo = compute_elbo(
-                    self._gamma_,
-                    self._phi_,
-                    self._lambda_,
-                    self._alpha_,
-                    self._eta_,
-                    self.word_ct_array
-                )
-                print(f"Iteration {it}, Delta Eta = {delta}, elbo is {elbo}")
 
             self._eta_ = eta_new 
             it += 1 
@@ -317,7 +312,7 @@ class LDASmoothed:
             )
             print(f"{it}-> mean ELBO {elbo/self.M}")
             if it == 0: 
-                print(f'Training started -> mean ELBO at init is :{elbo/self.M}')
+                print(f'npaining started -> mean ELBO at init is :{elbo/self.M}')
 
             self.e_step(step, threshold, verbose=False)
             self.m_step(step, threshold, verbose=False)

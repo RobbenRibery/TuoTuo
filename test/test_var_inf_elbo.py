@@ -12,13 +12,17 @@ from test.test_func_expec_log_dirichlet import expec_log_dirichlet_mirror
 def log_gamma_sum_term_mirror(x:np.ndarray,) -> float: 
 
     # column vector representation of hyperparameters 
-    if x.ndim == 1: 
-        x = x.reshape(1,-1)
+    if not isinstance(x, float):
+        if x.ndim == 1: 
+            x = x.reshape(1,-1)
 
-    assert x.shape[0] == 1 and x.shape[1] >= 1 
-    sum_ = np.sum(x)
+        assert x.shape[0] == 1 and x.shape[1] >= 1 
+        sum_ = np.sum(x)
 
-    return loggamma(sum_) - np.sum(loggamma(x))
+        return loggamma(sum_) - np.sum(loggamma(x))
+
+    else: 
+        raise ValueError(f"Input must be an array, instead obtained {x}")
 
 @pytest.fixture
 def input_1(): 
@@ -33,10 +37,10 @@ def test_log_gamma_sum_function(input_1):
 
         print(x, x.shape, i)
 
-        assert isinstance(log_gamma_sum_term(tr.tensor(x)), float)
+        assert isinstance(log_gamma_sum_term(np.array(x)), float)
         assert isinstance(log_gamma_sum_term_mirror(x), float)
 
-        res = log_gamma_sum_term(tr.tensor(x))
+        res = log_gamma_sum_term(np.array(x))
 
         assert round(res,5) == round(log_gamma_sum_term_mirror(x),5)
 
@@ -49,7 +53,7 @@ def test_log_gamma_sum_function(input_1):
 
 
 def var_inf_part2_corpus_level_mirror(
-        _eta_: np.ndarray, 
+        _eta_: float, 
         _lambda_: np.ndarray,
         _alpha_: np.ndarray,
         num_topics: int,
@@ -65,18 +69,22 @@ def var_inf_part2_corpus_level_mirror(
     if _alpha_.ndim == 2: 
         K = len(_alpha_[0])
         _alpha_ = _alpha_[0]
-        _eta_ = _eta_[0]
+
     else:
         K = len(_alpha_) 
+
+    V = _lambda_.shape[1]
+
+    print(f"Mirror function: num_topic{K}, num_word:{V}")
     
     assert num_topics == K
 
-    term2_1 = K*log_gamma_sum_term_mirror(_eta_) 
+    term2_1 = K*loggamma(V*_eta_) - K * V * loggamma(_eta_)
+
+    delta = 0
     for i in range(K): 
-
-        delta = np.dot(_eta_-1, expec_log_dirichlet_mirror(_lambda_[i])) 
-
-        term2_1 += delta 
+        delta += np.sum(expec_log_dirichlet_mirror(_lambda_[i])) * (_eta_-1)
+    term2_1 += delta
 
     term2_2 = 0
     for i in range(K): 
@@ -89,7 +97,9 @@ def var_inf_part2_corpus_level_mirror(
         term2_2 += delta 
 
     term2_3 = log_gamma_sum_term_mirror(_alpha_) * batch_size
-
+    print(f"Mirror term1 : {term2_1}")
+    print(f"Mirror term2 : {term2_2}")
+    print(f"Mirror term3 : {term2_3}")
     
     return term2_1 - term2_2 + term2_3
 
@@ -100,9 +110,7 @@ def input_2():
     # 3 topics 
 
     _init_var = {
-        '_eta_': np.array(
-            [[2,2,2,2,2]],
-        ),
+        '_eta_': 2.0,
         '_lambda_': np.array([
             [0.2, 0.2, 0.2, 0.2, 0.2],
             [0.1, 0.1, 0.1, 0.1, 0.6],
@@ -118,17 +126,16 @@ def input_2():
 def test_corpus_part_ELBO(input_2): 
 
     vars_np = input_2
-
-    vars_tr = vars_np.copy()
-    for k,v in vars_tr.items(): 
-        vars_tr[k] = tr.from_numpy(v)
+    for k,v in vars_np.items(): 
+        vars_np[k] = v
 
     elbo1 = eblo_corpus_part(
-        vars_tr['_eta_'],
-        vars_tr['_lambda_'],
-        vars_tr['_alpha_'],
+        vars_np['_eta_'],
+        vars_np['_lambda_'],
+        vars_np['_alpha_'],
         2, 
     )
+    print(elbo1)
 
     elbo2 = var_inf_part2_corpus_level_mirror(
         vars_np['_eta_'],
@@ -137,8 +144,8 @@ def test_corpus_part_ELBO(input_2):
         3,
         2, 
     )
-
-    assert round(elbo1,4) == round(elbo2,4)
+    print(elbo2)
+    assert elbo1 == elbo2
 
     
 def var_inf_part1_doc_level_mirror(
@@ -208,9 +215,7 @@ def input3_():
     # 
 
     _init_var = {
-        '_eta_': np.array(
-            [[2,2,2,2,2,2,2,2,2,2]],
-        ),
+        '_eta_': 2,
         '_alpha_': np.array(
             [[1,2,3]],
         ),
@@ -332,7 +337,7 @@ def input3_():
 
 def test_docs_part_ELBO(input3_): 
 
-    pprint(input3_)
+    #pprint(input3_)
 
     doc_elbo_mirror = var_inf_part1_doc_level_mirror(
         input3_['_alpha_'],
@@ -343,12 +348,14 @@ def test_docs_part_ELBO(input3_):
     )
 
     doc_elbo = elbo_doc_depend_part(
-        tr.from_numpy(input3_['_alpha_']),
-        tr.from_numpy(input3_['_gamma_']),
-        tr.from_numpy(input3_['_phi_v']),
-        tr.from_numpy(input3_['_lambda_']),
-        tr.from_numpy(input3_['w_ct']),
+        input3_['_alpha_'],
+        input3_['_gamma_'],
+        input3_['_phi_v'],
+        input3_['_lambda_'],
+        input3_['w_ct'],
     )
+    #print(doc_elbo)
+    print(f"Mirror func doc elbo -> {doc_elbo_mirror}")
 
     assert round(doc_elbo_mirror,5) == round(doc_elbo,5)
 
@@ -361,17 +368,22 @@ def test_docs_part_ELBO(input3_):
         input3_['_gamma_'].shape[0], 
     )
 
+    print(f"Mirror func corpus elbo -> {corpus_eblo_mirror}")
+
     elbo = compute_elbo(
-        tr.from_numpy(input3_['_gamma_']),
-        tr.from_numpy(input3_['_phi_v']),
-        tr.from_numpy(input3_['_lambda_']),
-        tr.from_numpy(input3_['_alpha_']),
-        tr.from_numpy(input3_['_eta_']),
-        tr.from_numpy(input3_['w_ct']),
+        input3_['_gamma_'],
+        input3_['_phi_v'],
+        input3_['_lambda_'],
+        input3_['_alpha_'],
+        input3_['_eta_'],
+        input3_['w_ct'],
     )
+
+    #print(corpus_eblo_mirror)
+    #print(elbo)
 
     elbo_mirror = doc_elbo_mirror + corpus_eblo_mirror
 
-    assert round(elbo,4) == round(elbo_mirror,4)
+    assert elbo == elbo_mirror
 
 

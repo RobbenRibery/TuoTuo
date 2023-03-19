@@ -1,7 +1,7 @@
 import torch as tr 
 import numpy as np 
 import pandas as pd 
-from scipy.special import gammaln
+from scipy.special import gammaln, psi
 
 from src.text_pre_processor import (
     remove_accented_chars, 
@@ -15,7 +15,7 @@ import copy
 from typing import List, Dict, Union
 from collections import defaultdict 
 
-DTYPE = tr.double
+DTYPE = float 
 
 def data_loader(dataset_name:str, ): 
 
@@ -121,26 +121,26 @@ def process_documents(doc_dict:dict, sample:bool = True,):
     }
 
 
-def expec_log_dirichlet(dirichlet_parm:tr.Tensor,) -> tr.Tensor: 
+def expec_log_dirichlet(dirichlet_parm:np.ndarray,) -> np.ndarray: 
 
     """Compute the E[log x_i | dirichlet_parm] for every single dimension, return as a tensor 
 
     Returns:
-        tr.Tensor: E[log x|dirichlet_parm] for every dimension of the dirichlet variable 
+        np.ndarray: E[log x|dirichlet_parm] for every dimension of the dirichlet variable 
     """
     if dirichlet_parm.ndim == 1:
         assert sum(dirichlet_parm > 0) == len(dirichlet_parm), f"Parameters for Dirichilet distribution should be all positive, get {dirichlet_parm}" 
     else: 
         assert dirichlet_parm.shape[0] == 1, f"only vector is accepted, {dirichlet_parm.shape} matrix is provided."
-        assert tr.sum(dirichlet_parm > 0).item() == dirichlet_parm.shape[1]
+        assert np.sum(dirichlet_parm > 0) == dirichlet_parm.shape[1]
 
-    term2 = tr.special.digamma(tr.sum(dirichlet_parm))
-    temr1s = tr.special.digamma(dirichlet_parm)
+    term2 = psi(np.sum(dirichlet_parm))
+    temr1s = psi(dirichlet_parm)
 
     assert temr1s.shape == dirichlet_parm.shape 
     return temr1s - term2
 
-def log_gamma_sum_term(x:tr.Tensor) -> float:
+def log_gamma_sum_term(x:np.ndarray) -> float:
 
     """Compute 
 
@@ -155,18 +155,21 @@ def log_gamma_sum_term(x:tr.Tensor) -> float:
         x = x.reshape(-1,1)
 
     assert x.shape[0] >= 1 and x.shape[1] == 1 
-    sum_ = tr.sum(x)
+    sum_ = np.sum(x)
 
-    return (tr.lgamma(sum_) - tr.sum(tr.lgamma(x))).item()
+    assert sum_ >= 0 
+    assert (x >= 0).all()
+
+    return gammaln(sum_) - np.sum(gammaln(x))
 
 
 def compute_elbo(
-        _gamma_:tr.Tensor, 
-        _phi_:tr.Tensor, 
-        _lambda_:tr.Tensor,
-        _alpha_: tr.Tensor,
-        _eta_: tr.Tensor,
-        w_ct: tr.Tensor, 
+        _gamma_:np.ndarray, 
+        _phi_:np.ndarray, 
+        _lambda_:np.ndarray,
+        _alpha_: np.ndarray,
+        _eta_: np.ndarray,
+        w_ct: np.ndarray, 
     ) -> float: 
 
     """Compute the approximated value for the ELBO, which is the objective function in EM steps, against a batch of documents 
@@ -220,53 +223,53 @@ def compute_elbo(
 
 def eblo_corpus_part(
         _eta_: float,
-        _lambda_: tr.Tensor, 
-        _alpha_:tr.Tensor, 
+        _lambda_: np.ndarray, 
+        _alpha_:np.ndarray, 
         n_docs:int,
     ) -> float: 
 
     if _alpha_.ndim == 2: 
         K = len(_alpha_[0])
-        _alpha_ = _alpha_.flatten()
-        _eta_ = _eta_.flatten()
+        _alpha_ = _alpha_.ravel()
     else:
         K = len(_alpha_) 
 
-    V = _lambda_.shape[0]
+    V = _lambda_.shape[1]
+    #print(f"Elbo function: num_topic{K}, num_word:{V}")
 
     # part 2, the global part of the ELBO, this part of the parameters are shared across documnets 
     term2 = log_gamma_sum_term(_alpha_) * n_docs
-    term2 += K*(gammaln(V*_eta_) - V * gammaln(_eta_))
+    #print(term2)
+    term2 += K*gammaln(V*_eta_) - K * V * gammaln(_eta_)
 
+    #print(term2)
     for k in range(K): 
 
         k_sum_2 = 0 
-        k_sum_2 += tr.dot((_eta_ - _lambda_[k]).flatten(), expec_log_dirichlet(_lambda_[k]))
+
+        k_sum_2 += np.dot(_eta_ - _lambda_[k],  expec_log_dirichlet(_lambda_[k]))
         k_sum_2 -= log_gamma_sum_term(_lambda_[k])
 
-        term2 += k_sum_2.item()
+        term2 += k_sum_2
+
+    #print(term2)
 
     return term2
 
 
 def elbo_doc_depend_part(
-        _alpha_: tr.Tensor, 
-        _gamma_: tr.Tensor, 
-        _phi_: tr.Tensor,
-        _lambda_:tr.Tensor,
-        w_ct:tr.Tensor, 
+        _alpha_: np.ndarray, 
+        _gamma_: np.ndarray, 
+        _phi_: np.ndarray,
+        _lambda_:np.ndarray,
+        w_ct:np.ndarray, 
     ) -> float:
 
     #print(w_ct)
     #print(w_ct.shape)
-
-    _alpha_ = _alpha_.double()
-    _gamma_ = _gamma_.double()
-    _lambda_ = _lambda_.double()
-    w_ct = w_ct.double()
     
     if _alpha_.ndim == 2: 
-        _alpha_ = _alpha_.flatten()
+        _alpha_ = _alpha_.ravel()
 
     M = _gamma_.shape[0]
     V = _lambda_.shape[1]
@@ -274,7 +277,7 @@ def elbo_doc_depend_part(
 
     #print(f"Optimised Function | Number of document: {M} | Number of topics: {K}")
 
-    expec_beta_store = tr.empty((_lambda_.shape), dtype=float)
+    expec_beta_store = np.empty((_lambda_.shape), dtype=DTYPE)
     for k in range(K): 
         expec_beta_store[k] = expec_log_dirichlet(_lambda_[k])
 
@@ -284,10 +287,10 @@ def elbo_doc_depend_part(
         term1 -= log_gamma_sum_term(_gamma_[d])
 
         expect_theta_d = expec_log_dirichlet(_gamma_[d])
-        term1 += tr.dot(
+        term1 += np.dot(
             _alpha_ - _gamma_[d],
             expect_theta_d,
-        ).item()
+        )
 
         for v in range(V): 
 
@@ -295,17 +298,17 @@ def elbo_doc_depend_part(
                 assert _phi_[d][v].sum() == 0
                 continue
 
-            term2 += (w_ct[v][d]*tr.dot(_phi_[d][v], expect_theta_d)).item()
+            term2 += (w_ct[v][d]*np.dot(_phi_[d][v], expect_theta_d))
 
             if _phi_[d][v].sum() == 0: 
-                logs = tr.zeros(_phi_[d][v].shape, dtype=DTYPE)
+                logs = np.zeros(_phi_[d][v].shape, dtype=DTYPE)
             else:
-                logs = tr.log(_phi_[d][v])
+                logs = np.log(_phi_[d][v])
 
             
-            term2 -= (w_ct[v][d]*tr.dot(_phi_[d][v], logs)).item()
+            term2 -= (w_ct[v][d]*np.dot(_phi_[d][v], logs))
             
-            term3 += (w_ct[v][d]*tr.dot(_phi_[d][v], expec_beta_store[:,v])).item()
+            term3 += (w_ct[v][d]*np.dot(_phi_[d][v], expec_beta_store[:,v]))
 
     #print(term1, term2, term3)
     return term1 + term2 + term3
@@ -341,11 +344,3 @@ def get_np_wct(w_ct_dict:Dict, docs:List[List[str]]):
         w_idx += 1 
 
     return w_ct_np, w_2_idx 
-
-
-def np_obj_2_tr(x:np.ndarray) -> tr.Tensor: 
-
-    o = tr.from_numpy(np.array(x, dtype=float))
-    o = o.double()
-
-    return o

@@ -18,10 +18,10 @@ def expec_log_dirichlet_mirror(alpha:np.ndarray) -> np.ndarray:
 @pytest.fixture
 def input_values():
     
-    tensor1 = tr.tensor([[1,1,1]], dtype=float)
-    tensor2 = tr.tensor([1,1,1], dtype=float)
-    tensor3 = tr.tensor([4,5,6], dtype=float)
-    tensor4 = tr.tensor([[0.9,1,0.2]], dtype=float)
+    tensor1 = np.array([[1,1,1]], dtype=float)
+    tensor2 = np.array([1,1,1], dtype=float)
+    tensor3 = np.array([4,5,6], dtype=float)
+    tensor4 = np.array([[0.9,1,0.2]], dtype=float)
 
     return [tensor1, tensor2, tensor3, tensor4]
     
@@ -32,16 +32,16 @@ def test_expectation_log_dirichlet(input_values):
         #print(tensor)
         #print(exp_dirichlet_var_)
 
-        exp_dirichlet_var = expec_log_dirichlet_mirror(tensor.numpy())
+        exp_dirichlet_var = expec_log_dirichlet_mirror(tensor)
         #print(type(exp_dirichlet_var))
         #print(exp_dirichlet_var)
         #print(exp_dirichlet_var.shape)
 
         assert (
-            np.round(exp_dirichlet_var_.numpy(),2) == np.round(exp_dirichlet_var,2)
+            np.round(exp_dirichlet_var_,2) == np.round(exp_dirichlet_var,2)
         ).any(), \
             print(
-            np.round(exp_dirichlet_var_.numpy(),2), 
+            np.round(exp_dirichlet_var_,2), 
             np.round(exp_dirichlet_var,2)
         )
         #print()

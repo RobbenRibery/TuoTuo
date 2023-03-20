@@ -102,7 +102,7 @@ class LDASmoothed:
             print()
 
         #Dirichlet Prior, Surrogate for _alpha_ 
-        self._gamma_ = self._alpha_ + np.ones((self.M,self.K), dtype=DTYPE) * len(docs[0]) / self.K 
+        self._gamma_ = self._alpha_ + np.ones((self.M,self.K), dtype=DTYPE) * self.V / self.K 
         if verbose: 
             print(f"Var Inf - Topic Dirichlet prior, Gamma")
             print(self._gamma_.shape)
@@ -126,7 +126,7 @@ class LDASmoothed:
             print(self._phi_.shape)
 
 
-    def e_step(self, step:int = 200, threshold:float = 1e-07, verbose:bool = False,) -> None: 
+    def e_step(self, step:int = 100, threshold:float = 1e-07, verbose:bool = False,) -> None: 
 
         delta_gamma =  np.full(self._gamma_.shape, fill_value=np.inf)
         l2_delta_gamma = np.linalg.norm(delta_gamma)
@@ -177,11 +177,15 @@ class LDASmoothed:
             for k in range(self.K):
                 for v in range(self.V):
                     self._lambda_[k][v] = self._eta_ + np.dot(self.word_ct_array[v], self._phi_[:,v,k])    
+                    if self._lambda_[k][v] < 0: 
+                        raise ValueError(f"Varitional Dirichlet parameter at doc {d}, topic {k} went negative after update using alpha:{self.self._eta_} and phi part {np.dot(self.word_ct_array[v], self._phi_[:,v,k])}")
             
             ### Update Gamma[d][k] ###
             for d in range(self.M): 
                 for k in range(self.K):
                     gamma[d][k] = self._alpha_[k] + np.dot(self.word_ct_array[:,d],self._phi_[d,:,k])
+                    if gamma[d][k] < 0: 
+                        raise ValueError(f"Varitional Dirichlet parameter at doc {d}, topic {k} went negative after update using alpha:{self._alpha_[k]} and phi part {np.dot(self.word_ct_array[:,d],self._phi_[d,:,k])}")
                     ###print(self._gamma_[d][k], gamma[d][k])
 
 
@@ -233,20 +237,24 @@ class LDASmoothed:
             update = (g-c)/h 
 
             alpha_new = self._alpha_ - update 
-            print(f"{self._gamma_.sum()}|{self._alpha_} -> {alpha_new}")
+
+            if (alpha_new < 0).any(): 
+                raise ValueError(f"Negative dirichlet parameter encoutered at iteration {it}, alpda new: {alpha_new}")
 
             delta = np.linalg.norm(alpha_new-self._alpha_) 
 
             if verbose: 
-                elbo = compute_elbo(
-                    self._gamma_,
-                    self._phi_,
-                    self._lambda_,
-                    self._alpha_,
-                    self._eta_,
-                    self.word_ct_array
-                )
-                print(f"Iteration {it}, Delta Alpha = {delta} elbo is {elbo}")
+                # elbo = compute_elbo(
+                #     self._gamma_,
+                #     self._phi_,
+                #     self._lambda_,
+                #     self._alpha_,
+                #     self._eta_,
+                #     self.word_ct_array
+                # )
+                print(f"M Step: Iteration {it}, Delta Alpha = {delta}")
+                print(f"Alpha Old:{self._alpha_} -> Alpha New:{alpha_new}")
+
 
             self._alpha_ = alpha_new
             it += 1 
@@ -281,11 +289,17 @@ class LDASmoothed:
             update = g/h
 
             eta_new = self._eta_ - update 
-            print(f"{g} -> {h} | {self._eta_} -> {eta_new}")
+            if eta_new < 0: 
+                raise ValueError(f"Dirichlet Parameter become < 0 at iteration {it}")
+            print(f"Eta Old {self._eta_} -> Eta New {eta_new}")
+
             #if eta_new < 0: 
                 #raise ValueError(f"Dirichelt Disnpibution parameter is positive, hoever dervired {eta_new} from orig {self._eta_} and -update {-update}")
             delta = np.abs(eta_new - self._eta_)
             #print()
+
+            if verbose: 
+                print(f"M Step: delta eta is {delta}")
 
             self._eta_ = eta_new 
             it += 1 
@@ -295,7 +309,7 @@ class LDASmoothed:
 
         warnings.warn(f"Update Eta: Maximum iteration reached at step {it}")
 
-    def fit(self, step:int = 500, threshold:float = 1e-5, verbose:bool = False, neg_delta_patience:int = 5):
+    def fit(self, step:int = 200, threshold:float = 1e-5, verbose:bool = False, neg_delta_patience:int = 5):
         
         it = 0
         neg_delta = 0
@@ -310,12 +324,13 @@ class LDASmoothed:
                 self._eta_,
                 self.word_ct_array
             )
-            print(f"{it}-> mean ELBO {elbo/self.M}")
+            print(f"{it}-> m perpexlity {np.exp(-1 * elbo/np.sum(self.word_ct_array))}")
             if it == 0: 
                 print(f'npaining started -> mean ELBO at init is :{elbo/self.M}')
+    
 
-            self.e_step(step, threshold, verbose=False)
-            self.m_step(step, threshold, verbose=False)
+            self.e_step(step, threshold, verbose=verbose)
+            self.m_step(step, threshold, verbose=verbose)
 
             elbo_hat = compute_elbo(
                 self._gamma_,

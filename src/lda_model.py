@@ -13,6 +13,8 @@ from src.utils import (
     compute_elbo,
 )
 
+from src.cutils import _dirichlet_expectation_2d
+
 from pprint import pprint
 
 SEED = 42 
@@ -76,7 +78,7 @@ class LDASmoothed:
         # define the DGM hyper-parameters
         # Dirichlet Prior 
         np.random.seed(SEED)
-        self._alpha_ = np.random.gamma(shape = 100, scale = 0.01, size =self.K)
+        self._alpha_ = np.ones((1,self.K))#np.random.gamma(shape = 100, scale = 0.01, size =self.K)
         self._alpha_ = self._alpha_.ravel()
 
         if verbose:
@@ -308,6 +310,7 @@ class LDASmoothed:
                 return 
 
         warnings.warn(f"Update Eta: Maximum iteration reached at step {it}")
+
 
     def fit(self, step:int = 200, threshold:float = 1e-5, verbose:bool = False, neg_delta_patience:int = 5):
         

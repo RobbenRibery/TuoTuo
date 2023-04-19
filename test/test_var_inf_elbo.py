@@ -108,7 +108,6 @@ def input_2():
 
     # 5 words, 
     # 3 topics 
-
     _init_var = {
         '_eta_': 2.0,
         '_lambda_': np.array([

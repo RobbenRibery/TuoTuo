@@ -3,7 +3,7 @@ import warnings
 
 import torch as np 
 import numpy as np 
-from scipy.special import psi, polygamma
+from scipy.special import psi, gammaln
 
 from src.utils import (
     get_vocab_from_docs, 
@@ -19,6 +19,31 @@ from pprint import pprint
 
 SEED = 42 
 DTYPE = float
+
+#Dim Conventions 
+#Alpha: Topic Prior, 1D NP array 
+#Eta: Word Prior, 1D NP array 
+def expec_real_dist_minus_suro_dist(
+    expec_log_var: np.ndarray, 
+    real_dist_prior:np.ndarray,
+    suro_dist_prior:np.ndarray,
+    num_topic: int,
+) -> int: 
+    
+    """Pass in the num_topic here, means assuming that we let alphda being an exchangable Dirichlet as well
+
+    Returns:
+        _type_: _description_
+    """
+    assert expec_log_var.ndim == 2
+    delta_loss = 0 
+
+    delta_loss += np.sum((real_dist_prior-suro_dist_prior)*expec_log_var)
+    delta_loss += np.sum(gammaln(suro_dist_prior)-gammaln(real_dist_prior))
+    delta_loss += np.sum(gammaln(real_dist_prior*num_topic) - gammaln(np.sum(suro_dist_prior,1)))
+
+    return delta_loss
+
 
 class LDASmoothed: 
 

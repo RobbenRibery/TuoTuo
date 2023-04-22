@@ -123,22 +123,23 @@ def process_documents(doc_dict:dict, sample:bool = True,):
 
 def expec_log_dirichlet(dirichlet_parm:np.ndarray,) -> np.ndarray: 
 
-    """Compute the E[log x_i | dirichlet_parm] for every single dimension, return as a tensor 
+    """Compute the E[log var | dirichlet_parm] for every single dimension, return as a tensor 
 
     Returns:
-        np.ndarray: E[log x|dirichlet_parm] for every dimension of the dirichlet variable 
+        np.ndarray: E[log var|dirichlet_parm] for every dimension of the dirichlet variable 
     """
     if dirichlet_parm.ndim == 1:
         assert sum(dirichlet_parm > 0) == len(dirichlet_parm), f"Parameters for Dirichilet distribution should be all positive, get {dirichlet_parm}" 
+
+        term2 = psi(np.sum(dirichlet_parm))
+        temr1s = psi(dirichlet_parm)
+
+        assert temr1s.shape == dirichlet_parm.shape 
+        return temr1s - term2
     else: 
-        assert dirichlet_parm.shape[0] == 1, f"only vector is accepted, {dirichlet_parm.shape} matrix is provided."
-        assert np.sum(dirichlet_parm > 0) == dirichlet_parm.shape[1]
+        assert np.sum(dirichlet_parm > 0) == dirichlet_parm.shape[1]*dirichlet_parm.shape[0]
 
-    term2 = psi(np.sum(dirichlet_parm))
-    temr1s = psi(dirichlet_parm)
-
-    assert temr1s.shape == dirichlet_parm.shape 
-    return temr1s - term2
+        return psi(dirichlet_parm) - psi(np.sum(dirichlet_parm, 1))[:, np.newaxis]
 
 def log_gamma_sum_term(x:np.ndarray) -> float:
 

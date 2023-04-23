@@ -254,10 +254,10 @@ class doc_generator:
 
     def generate_doc(self,) -> List[List[int]]:
 
-        l = [10, 10, 10]
+        l = [10] * self.M 
 
         docs = {}
-        for d in range(self.theta.shape[0]): 
+        for d in range(self.M): 
 
             topic_dist = Categorical(self.theta[d])
             doc = []

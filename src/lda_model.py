@@ -10,7 +10,6 @@ from src.utils import (
     get_np_wct, 
     expec_log_dirichlet,
     log_gamma_sum_term, 
-    compute_elbo,
 )
 
 from src.cutils import _dirichlet_expectation_2d
@@ -142,7 +141,6 @@ class LDASmoothed:
         print('loop phi')
         for id, d in enumerate(docs): 
             for word in d: 
-
                 v = self.word_2_idx[word]
                 phi[id][v] = 1/self.K
         
@@ -203,7 +201,6 @@ class LDASmoothed:
                     self._phi_[d, d_word_ids[i],:], 
                     temp 
                 )
-
             elbo += np.dot(d_word_cts, v)
         
         # compute Eq[log p(theta|alpha)] - Eq[log q(theta|gamma)]
@@ -229,6 +226,7 @@ class LDASmoothed:
                 suro_dist_prior= self._lambda_,
                 num_topic= self.V
             )
+
             
         return elbo
 

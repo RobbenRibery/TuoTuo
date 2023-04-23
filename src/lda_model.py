@@ -28,7 +28,7 @@ def expec_real_dist_minus_suro_dist(
     real_dist_prior:np.ndarray,
     suro_dist_prior:np.ndarray,
     num_topic: int,
-) -> int: 
+) -> float: 
     
     """Pass in the num_topic here, means assuming that we let alphda being an exchangable Dirichlet as well
 
@@ -61,6 +61,7 @@ class LDASmoothed:
             docs: List[List[str]],
             num_topics: int,
             word_ct_dict: dict,
+            num_doc_population: int, 
             word_ct_array: np.ndarray = None,
             word_to_idx: dict = None, 
             idx_to_word: dict = None, 
@@ -68,7 +69,8 @@ class LDASmoothed:
         ) -> None:
 
         assert get_vocab_from_docs(docs) == word_ct_dict
-
+        
+        self.D_population = num_doc_population
         self.docs = docs 
         
         # number of documents 
@@ -103,12 +105,11 @@ class LDASmoothed:
         # define the DGM hyper-parameters
         # Dirichlet Prior 
         np.random.seed(SEED)
-        self._alpha_ = np.ones((1,self.K))#np.random.gamma(shape = 100, scale = 0.01, size =self.K)
-        self._alpha_ = self._alpha_.ravel()
+        self._alpha_ = 1#np.random.gamma(shape = 100, scale = 0.01, size =self.K)
 
         if verbose:
             print(f"Topic Dirichlet Prior, Alpha")
-            print(self._alpha_.shape)
+            print(self._alpha_)
             print() 
         # Dirichlet Prior - Exchangeable Dirichlet
         self._eta_ = 1
@@ -151,6 +152,85 @@ class LDASmoothed:
         if verbose: 
             print(f"Var -Inf - Word wise Topic Multinomial/Categorical, Phi")
             print(self._phi_.shape)
+
+
+    def approx_elbo(
+            self,
+            X:np.ndarray,
+            sampling:bool = False, 
+        ) -> float:
+
+        """Approximate the Var inference ELBO 
+
+        X: Input matrix: 
+
+            - Row: document index
+            - Column: vocab indxies 
+            - Entries: number of time each vocab appeared in a particular document
+
+        Returns:
+            float: estimated elbo
+        """
+
+        # handlder for just one document 
+        num_doc = 1 if X.ndim == 1 else X.shape[0]
+
+        # under surogate distribution: 
+        # \gamma -> \theta
+        expec_log_theta = _dirichlet_expectation_2d(self._gamma_.astype(DTYPE))
+
+        # \lambda -> \beta 
+        expect_log_beta = _dirichlet_expectation_2d(self._lambda_.astype(DTYPE))
+
+        elbo = 0
+
+        # compute Eq[logp(z|\theta)] - Eq[logq(z|\phi)] + Eq[logp(w|beta,z)]
+        for d in range(num_doc): 
+            
+            # indicies of vocab in the document 
+            d_word_ids = np.nonzero(X[d,:])[0]
+            d_word_cts = X[d,d_word_ids]
+
+            v = np.zeros(len(d_word_ids), dtype = DTYPE)
+
+            for i in range(len(d_word_ids)): 
+                
+                # temp in R K
+                temp = expec_log_theta[d,:] + expect_log_beta[:, d_word_ids[i]]
+                temp -= np.log(self._phi_[d,  d_word_ids[i], :])
+
+                v[i] = np.dot(
+                    self._phi_[d, d_word_ids[i],:], 
+                    temp 
+                )
+
+            elbo += np.dot(d_word_cts, v)
+        
+        # compute Eq[log p(theta|alpha)] - Eq[log q(theta|gamma)]
+        elbo += \
+            expec_real_dist_minus_suro_dist(
+                expec_log_var= expec_log_theta, 
+                real_dist_prior= self._alpha_,
+                suro_dist_prior= self._gamma_,
+                num_topic= self.K 
+            )
+        
+        # document dependent part of the loss function is completed, 
+        # performe scaling 
+        if sampling: 
+            score = score * self.D_population/num_doc
+
+        # document indepednet part 
+        # Compute Eq[logp(\beta|\eta)] = Eq[logq(\beta|\lambda)]
+        elbo += \
+            expec_real_dist_minus_suro_dist(
+                expec_log_var= expect_log_beta,
+                real_dist_prior= self._eta_,
+                suro_dist_prior= self._lambda_,
+                num_topic= self.V
+            )
+            
+        return elbo
 
 
     def e_step(self, step:int = 100, threshold:float = 1e-07, verbose:bool = False,) -> None: 

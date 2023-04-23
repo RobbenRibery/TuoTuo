@@ -364,6 +364,7 @@ class OnlineLDA:
             phinorm = n.zeros(len(ids))
             for i in range(0, len(ids)):
                 temp = Elogtheta[d, :] + self._Elogbeta[:, ids[i]]
+                # len(temp) = k
                 tmax = max(temp)
                 phinorm[i] = n.log(sum(n.exp(temp - tmax))) + tmax
             score += n.sum(cts * phinorm)

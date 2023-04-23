@@ -151,7 +151,6 @@ class LDASmoothed:
             print(f"Var -Inf - Word wise Topic Multinomial/Categorical, Phi")
             print(self._phi_.shape)
 
-
     def approx_elbo(
             self,
             X:np.ndarray,
@@ -229,6 +228,21 @@ class LDASmoothed:
 
             
         return elbo
+    
+    def approx_perplexity(self, X:np.ndarray, sampling:bool = False,) -> float: 
+
+        """compute the perplexity (per document) based on the approximated ELBO
+
+        """
+        num_doc = 1 if X.ndim == 1 else X.shape[0]
+        elbo = self.approx_elbo(X, sampling)
+
+        if sampling: 
+            total_word_count = np.sum(X) *  self.D_population/num_doc
+        else:
+            total_word_count = np.sum(X)
+
+        return np.exp(-elbo/total_word_count)
 
 
     def e_step(self, step:int = 100, threshold:float = 1e-07, verbose:bool = False,) -> None: 

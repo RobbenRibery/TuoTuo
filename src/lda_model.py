@@ -4,7 +4,7 @@ import warnings
 import torch as np 
 import numpy as np 
 
-from scipy.special import psi, gammaln, logsumexp 
+from scipy.special import psi, gammaln, logsumexp, polygamma
 
 from src.utils import (
     get_vocab_from_docs, 
@@ -164,7 +164,7 @@ class LDASmoothed:
         expec_log_theta = _dirichlet_expectation_2d(self._gamma_.astype(DTYPE))
 
         # \lambda -> \beta 
-        expect_log_beta = _dirichlet_expectation_2d(self._lambda_.astype(DTYPE))
+        expec_log_beta = _dirichlet_expectation_2d(self._lambda_.astype(DTYPE))
 
         elbo = 0
 
@@ -180,7 +180,7 @@ class LDASmoothed:
             for i in range(len(d_word_ids)): 
                 
                 # temp in R K
-                temp = expec_log_theta[d,:] + expect_log_beta[:, d_word_ids[i]]
+                temp = expec_log_theta[d,:] + expec_log_beta[:, d_word_ids[i]]
                 log_phi_sum[i] = logsumexp(temp)
 
             elbo += np.dot(d_word_cts, log_phi_sum)
@@ -203,13 +203,13 @@ class LDASmoothed:
         # Compute Eq[logp(\beta|\eta)] = Eq[logq(\beta|\lambda)]
         elbo += \
             expec_real_dist_minus_suro_dist(
-                expec_log_var= expect_log_beta,
+                expec_log_var= expec_log_beta,
                 real_dist_prior= self._eta_,
                 suro_dist_prior= self._lambda_,
                 num_topic= self.V
             )
             
-        return elbo, (expec_log_theta, expect_log_beta)
+        return elbo, (expec_log_theta, expec_log_beta)
     
     def approx_perplexity(self, X:np.ndarray, sampling:bool = False,) -> float: 
 
@@ -229,7 +229,7 @@ class LDASmoothed:
         
 
         return np.exp(np_clip_for_exp(temp)), suff_stats
-
+    
 
     def e_step_batch(
         self, 
@@ -252,16 +252,21 @@ class LDASmoothed:
             perplexity, suff_stats = self.approx_perplexity(X)
             print(f'Before Estep perplexity = {perplexity}')
 
+        lambda_update = np.zeros(self._lambda_.shape, dtype=DTYPE)
+
         for d in range(self.M): 
 
             delta_gamma_d =  np.full(self._gamma_.shape[1], fill_value=np.inf)
             l1_delta_gamma_d = np.linalg.norm(delta_gamma_d, ord=1)
 
             d_word_ids = np.nonzero(X[d,:])[0]
-            d_word_cts = X[d, d_word_ids, np.newaxis]
+            d_word_cts = X[d, d_word_ids, np.newaxis] #(w,1)
 
-            expec_log_theta_d = expec_log_theta[d,:,np.newaxis].reshape(self.K,1) #k,1
-            expec_log_beta_d = expec_log_beta[:, d_word_ids] #k, v
+            expec_log_theta_d = expec_log_theta[d,:, np.newaxis] #k,1
+            expec_log_beta_d = expec_log_beta[:, d_word_ids] #k,w
+
+            exp_expec_log_theta_d = np.exp(expec_log_theta_d) #1,k
+            exp_expec_log_beta_d = np.exp(expec_log_beta_d) #k,w
 
             it = 0 
             while l1_delta_gamma_d > threshold and it <= step:
@@ -269,13 +274,14 @@ class LDASmoothed:
                 gamma_d = np.copy(self._gamma_[d])
                     
                 ### --- Update Phi[d][v] --- ###
-                phi_d = np.exp((expec_log_beta_d + expec_log_theta_d).T + 1e-10) #w,k
+                ## compute the normalise, or the sum of phi over topics 
+                phi_d_norm = np.dot(exp_expec_log_theta_d.T,  exp_expec_log_beta_d) + 1e-100 #1, w
+                #print(phi_d_norm.shape)
 
-                ### Normalise Phi ###
-                phi_d_norm = phi_d/np.sum(phi_d, axis=1)[:, np.newaxis]
+                #print((d_word_cts/phi_d_norm).shape)
                 
                 ### --- Update Gamma[d] --- ###
-                self._gamma_[d,:] = (self._alpha_ + np.dot(phi_d_norm.T, d_word_cts)).ravel()
+                self._gamma_[d,:] = (self._alpha_ + exp_expec_log_theta_d.T * np.dot(d_word_cts.T/phi_d_norm, exp_expec_log_beta_d.T)).ravel()
                 expec_log_theta_d = _dirichlet_expectation_2d(self._gamma_[d,:,np.newaxis])
 
                 ### --- update stop creteria --- ###
@@ -289,19 +295,32 @@ class LDASmoothed:
             if it > step:
                 warnings.warn(f"Estep, Maximum iteration reached at step {it} for Document {d}")
 
+            ### --- compute the update that's required for lambda ---  ### 
+            lambda_update[:, d_word_ids] += np.outer(exp_expec_log_theta_d, d_word_cts.T/phi_d_norm)
+
+        lambda_update *= np.exp(expec_log_beta)
+
         if verbose: 
             perplexity, suff_stats = self.approx_perplexity(X)
             print(f'After Estep perplexity = {perplexity}')
 
-        return self._gamma_, (expec_log_theta, expec_log_beta)
+        return self._gamma_, (lambda_update, expec_log_theta)
             
-    
 
-    def m_step(self, step: int = 100, threshold:float = 1e-07, verbose:bool = False,) -> None: 
+    def m_step_batch(
+        self, 
+        X: np.ndarray,
+        lambda_update: np.ndarray,
+        step: int = 100, 
+        threshold:float = 1e-07, 
+        verbose:bool = False,
+    ) -> None: 
+        
+        self._lambda_ = self._eta_ + lambda_update
 
-        self.update_alpha(step, threshold, verbose)
-        self.update_eta(step, threshold, verbose)
+        expec_log_beta = _dirichlet_expectation_2d(self._lambda_.astype(DTYPE))
 
+        return self._lambda_, expec_log_beta
 
     def update_alpha(self, step:int = 500, threshold:float = 1e-07, verbose:bool = False,) -> None: 
 
@@ -405,57 +424,6 @@ class LDASmoothed:
 
         warnings.warn(f"Update Eta: Maximum iteration reached at step {it}")
 
-
-    def fit(self, step:int = 200, threshold:float = 1e-5, verbose:bool = False, neg_delta_patience:int = 5):
-        
-        it = 0
-        neg_delta = 0
-
-        while it < step: 
-
-            elbo = compute_elbo(
-                self._gamma_,
-                self._phi_,
-                self._lambda_,
-                self._alpha_,
-                self._eta_,
-                self.word_ct_array
-            )
-            print(f"{it}-> m perpexlity {np.exp(-1 * elbo/np.sum(self.word_ct_array))}")
-            if it == 0: 
-                print(f'npaining started -> mean ELBO at init is :{elbo/self.M}')
-    
-
-            self.e_step(step, threshold, verbose=verbose)
-            self.m_step(step, threshold, verbose=verbose)
-
-            elbo_hat = compute_elbo(
-                self._gamma_,
-                self._phi_,
-                self._lambda_,
-                self._alpha_,
-                self._eta_,
-                self.word_ct_array
-            )
-            
-            delta_elbo = elbo_hat - elbo 
-            #print(f"Iteration {it}, improve on ELBO is {delta_elbo}")
-
-            if delta_elbo < 0: 
-                neg_delta += 1 
-
-            if neg_delta > neg_delta_patience: 
-                warnings.warn(f"Elbo decereases for {neg_delta} times")
-
-            if delta_elbo > 0 and delta_elbo < threshold: 
-                print(f'ELBO converged at {it} -> mean ELBO:{elbo_hat/self.M}')
-                return 
-            
-            it += 1 
-    
-        print(f"Maximum iteration reached at {it} -> mean ELBO: {elbo_hat/self.M}")
-
-        return self 
 
 
 

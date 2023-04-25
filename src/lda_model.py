@@ -3,13 +3,15 @@ import warnings
 
 import torch as np 
 import numpy as np 
-from scipy.special import psi, gammaln
+
+from scipy.special import psi, gammaln, logsumexp 
 
 from src.utils import (
     get_vocab_from_docs, 
     get_np_wct, 
     expec_log_dirichlet,
     log_gamma_sum_term, 
+    np_clip_for_exp,
 )
 
 from src.cutils import _dirichlet_expectation_2d
@@ -135,21 +137,6 @@ class LDASmoothed:
             print(self._gamma_.shape)
             print()
 
-        #Multinomial Prior, Surrogate for Theta vector drawn from Dirichlet(Alpha)
-        phi = np.zeros((len(docs),self.word_ct_array.shape[0],num_topics), dtype=DTYPE)
-
-        print('loop phi')
-        for id, d in enumerate(docs): 
-            for word in d: 
-                v = self.word_2_idx[word]
-                phi[id][v] = 1/self.K
-        
-        print('looped')
-        self._phi_ = phi
-        print('double')
-        if verbose: 
-            print(f"Var -Inf - Word wise Topic Multinomial/Categorical, Phi")
-            print(self._phi_.shape)
 
     def approx_elbo(
             self,
@@ -188,19 +175,15 @@ class LDASmoothed:
             d_word_ids = np.nonzero(X[d,:])[0]
             d_word_cts = X[d,d_word_ids]
 
-            v = np.zeros(len(d_word_ids), dtype = DTYPE)
+            log_phi_sum = np.zeros(len(d_word_ids), dtype = DTYPE)
 
             for i in range(len(d_word_ids)): 
                 
                 # temp in R K
                 temp = expec_log_theta[d,:] + expect_log_beta[:, d_word_ids[i]]
-                temp -= np.log(self._phi_[d,  d_word_ids[i], :])
+                log_phi_sum[i] = logsumexp(temp)
 
-                v[i] = np.dot(
-                    self._phi_[d, d_word_ids[i],:], 
-                    temp 
-                )
-            elbo += np.dot(d_word_cts, v)
+            elbo += np.dot(d_word_cts, log_phi_sum)
         
         # compute Eq[log p(theta|alpha)] - Eq[log q(theta|gamma)]
         elbo += \
@@ -225,9 +208,8 @@ class LDASmoothed:
                 suro_dist_prior= self._lambda_,
                 num_topic= self.V
             )
-
             
-        return elbo
+        return elbo, (expec_log_theta, expect_log_beta)
     
     def approx_perplexity(self, X:np.ndarray, sampling:bool = False,) -> float: 
 
@@ -235,89 +217,84 @@ class LDASmoothed:
 
         """
         num_doc = 1 if X.ndim == 1 else X.shape[0]
-        elbo = self.approx_elbo(X, sampling)
+        elbo, suff_stats = self.approx_elbo(X, sampling)
+        print(elbo)
 
         if sampling: 
             total_word_count = np.sum(X) *  self.D_population/num_doc
         else:
             total_word_count = np.sum(X)
 
-        return np.exp(-elbo/total_word_count)
+        temp = -elbo/total_word_count
+        
+
+        return np.exp(np_clip_for_exp(temp)), suff_stats
 
 
-    def e_step(self, step:int = 100, threshold:float = 1e-07, verbose:bool = False,) -> None: 
+    def e_step_batch(
+        self, 
+        X:np.ndarray, 
+        expec_log_theta: np.ndarray,
+        expec_log_beta:np.ndarray,
+        step:int = 100, 
+        threshold:float = 1e-05, 
+        verbose:bool = False,
+    ) -> None: 
+        
+        """
+        Update the document Var Inf parameters following the Eexpectation step of EM
 
-        delta_gamma =  np.full(self._gamma_.shape, fill_value=np.inf)
-        l2_delta_gamma = np.linalg.norm(delta_gamma)
+        E-step: 
+            - update __phi__ and __gamma__ in the direction of the partial derivative 
 
-        it = 0 
-        while it < step:
+        """
+        if verbose: 
+            perplexity, suff_stats = self.approx_perplexity(X)
+            print(f'Before Estep perplexity = {perplexity}')
 
-            if verbose: 
-                elbo = compute_elbo(
-                    self._gamma_,
-                    self._phi_,
-                    self._lambda_,
-                    self._alpha_,
-                    self._eta_,
-                    self.word_ct_array
-                )
-                print(f'Iteration {it}, Delta Gamma = {l2_delta_gamma}, the ELBO is {elbo}')
-    
-            gamma = np.copy(self._gamma_)
+        for d in range(self.M): 
+
+            delta_gamma_d =  np.full(self._gamma_.shape[1], fill_value=np.inf)
+            l1_delta_gamma_d = np.linalg.norm(delta_gamma_d, ord=1)
+
+            d_word_ids = np.nonzero(X[d,:])[0]
+            d_word_cts = X[d, d_word_ids, np.newaxis]
+
+            expec_log_theta_d = expec_log_theta[d,:,np.newaxis].reshape(self.K,1) #k,1
+            expec_log_beta_d = expec_log_beta[:, d_word_ids] #k, v
+
+            it = 0 
+            while l1_delta_gamma_d > threshold and it <= step:
+
+                gamma_d = np.copy(self._gamma_[d])
+                    
+                ### --- Update Phi[d][v] --- ###
+                phi_d = np.exp((expec_log_beta_d + expec_log_theta_d).T + 1e-10) #w,k
+
+                ### Normalise Phi ###
+                phi_d_norm = phi_d/np.sum(phi_d, axis=1)[:, np.newaxis]
+                
+                ### --- Update Gamma[d] --- ###
+                self._gamma_[d,:] = (self._alpha_ + np.dot(phi_d_norm.T, d_word_cts)).ravel()
+                expec_log_theta_d = _dirichlet_expectation_2d(self._gamma_[d,:,np.newaxis])
+
+                ### --- update stop creteria --- ###
+                delta_gamma_d = self._gamma_[d] - gamma_d 
+                l1_delta_gamma_d = np.linalg.norm(delta_gamma_d, ord=1)
+
+                it += 1 
+
+            expec_log_theta[d,:] = expec_log_theta_d.ravel()
+
+            if it > step:
+                warnings.warn(f"Estep, Maximum iteration reached at step {it} for Document {d}")
+
+        if verbose: 
+            perplexity, suff_stats = self.approx_perplexity(X)
+            print(f'After Estep perplexity = {perplexity}')
+
+        return self._gamma_, (expec_log_theta, expec_log_beta)
             
-            ### Update Phi[d][v][k] ###
-            for d in range(self.M): 
-                #print(d)
-                EqThetaD = expec_log_dirichlet(self._gamma_[d])
-                for v in range(self.V): 
-
-                    #if word v is not in document d, we continue to the next one 
-                    if self._phi_[d][v].sum() == 0:
-                        continue
-                    elif round(self._phi_[d][v].sum().item()) == 1:
-                        for k in range(self.K):
-
-                            EqBetak = expec_log_dirichlet(self._lambda_[k])
-
-                            self._phi_[d][v][k] = np.exp(EqThetaD[k] + EqBetak[v])
-                    else:
-                        raise ValueError(f"Sum of the multinomial parameters at document {d} and word {v} not eual to one, instead found {self._phi_[d][v]}")
-
-                    ## -- normalisation -- ## 
-                    self._phi_[d][v] /= np.sum(self._phi_[d][v])
-                    if np.isnan(self._phi_[d][v]).any():
-                        raise ValueError("phi nan")
-                    #print(self.idx_2_word[v])
-                    #print(self._phi_[d][v])
-                    #print(f"{d} -> {self.idx_2_word[v]} -> {self._phi_[d][v]}")
-
-            ### Update Lambda[k][v] ###
-            for k in range(self.K):
-                for v in range(self.V):
-                    self._lambda_[k][v] = self._eta_ + np.dot(self.word_ct_array[v], self._phi_[:,v,k])    
-                    if self._lambda_[k][v] < 0: 
-                        raise ValueError(f"Varitional Dirichlet parameter at doc {d}, topic {k} went negative after update using alpha:{self.self._eta_} and phi part {np.dot(self.word_ct_array[v], self._phi_[:,v,k])}")
-            
-            ### Update Gamma[d][k] ###
-            for d in range(self.M): 
-                for k in range(self.K):
-                    gamma[d][k] = self._alpha_[k] + np.dot(self.word_ct_array[:,d],self._phi_[d,:,k])
-                    if gamma[d][k] < 0: 
-                        raise ValueError(f"Varitional Dirichlet parameter at doc {d}, topic {k} went negative after update using alpha:{self._alpha_[k]} and phi part {np.dot(self.word_ct_array[:,d],self._phi_[d,:,k])}")
-                    ###print(self._gamma_[d][k], gamma[d][k])
-
-
-            delta_gamma = self._gamma_ - gamma
-            l2_delta_gamma = np.linalg.norm(delta_gamma)
-
-            if l2_delta_gamma < threshold: 
-                return 
-
-            self._gamma_ = gamma
-            it += 1 
-
-        warnings.warn(f"Update phi, lambda, gamma: Maximum iteration reached at step {it}")
     
 
     def m_step(self, step: int = 100, threshold:float = 1e-07, verbose:bool = False,) -> None: 

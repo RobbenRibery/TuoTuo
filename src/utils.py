@@ -10,12 +10,22 @@ from src.text_pre_processor import (
     remove_extra_whitespace_tabs,
     remove_stopwords 
 )
-
+import warnings 
 import copy 
 from typing import List, Dict, Union
 from collections import defaultdict 
 
 DTYPE = float 
+
+def np_clip_for_exp(x:np.ndarray, sub:float = 1e-05): 
+
+    if x >0: 
+        x = max(sub, x)
+    elif x< 0: 
+        x = min(sub,x)
+
+    return x
+
 
 def data_loader(dataset_name:str, ): 
 
@@ -137,6 +147,7 @@ def expec_log_dirichlet(dirichlet_parm:np.ndarray,) -> np.ndarray:
         assert temr1s.shape == dirichlet_parm.shape 
         return temr1s - term2
     else: 
+        warnings.warn('Please use Cython function for 2d Dirichlet Expectation')
         assert np.sum(dirichlet_parm > 0) == dirichlet_parm.shape[1]*dirichlet_parm.shape[0]
 
         return psi(dirichlet_parm) - psi(np.sum(dirichlet_parm, 1))[:, np.newaxis]

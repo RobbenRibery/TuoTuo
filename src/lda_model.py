@@ -140,6 +140,8 @@ class LDASmoothed:
             self,
             X:np.ndarray,
             sampling:bool = False, 
+            expec_log_theta: np.ndarray = None, 
+            expec_log_beta: np.ndarray = None,
         ) -> float:
 
         """Approximate the Var inference ELBO 
@@ -159,10 +161,12 @@ class LDASmoothed:
 
         # under surogate distribution: 
         # \gamma -> \theta
-        expec_log_theta = _dirichlet_expectation_2d(self._gamma_.astype(DTYPE))
+        if expec_log_theta is None:
+            expec_log_theta = _dirichlet_expectation_2d(self._gamma_.astype(DTYPE))
 
         # \lambda -> \beta 
-        expec_log_beta = _dirichlet_expectation_2d(self._lambda_.astype(DTYPE))
+        if expec_log_beta is None:
+            expec_log_beta = _dirichlet_expectation_2d(self._lambda_.astype(DTYPE))
 
         elbo = 0
 
@@ -195,7 +199,7 @@ class LDASmoothed:
         # document dependent part of the loss function is completed, 
         # performe scaling 
         if sampling: 
-            score = score * self.D_population/num_doc
+            elbo = elbo * self.D_population/num_doc
 
         # document indepednet part 
         # Compute Eq[logp(\beta|\eta)] = Eq[logq(\beta|\lambda)]
@@ -209,14 +213,25 @@ class LDASmoothed:
             
         return elbo, (expec_log_theta, expec_log_beta)
     
-    def approx_perplexity(self, X:np.ndarray, sampling:bool = False,) -> float: 
+    def approx_perplexity(
+            self, 
+            X:np.ndarray, 
+            sampling:bool = False,
+            expec_log_theta: np.ndarray = None, 
+            expec_log_beta: np.ndarray = None,
+        ) -> float: 
 
         """compute the perplexity (per document) based on the approximated ELBO
 
         """
         num_doc = 1 if X.ndim == 1 else X.shape[0]
-        elbo, suff_stats = self.approx_elbo(X, sampling)
-        print(elbo)
+        elbo, expec_logs = self.approx_elbo(
+            X, 
+            sampling,
+            expec_log_theta,
+            expec_log_beta,
+        )
+        #print(elbo)
 
         if sampling: 
             total_word_count = np.sum(X) *  self.D_population/num_doc
@@ -225,8 +240,7 @@ class LDASmoothed:
 
         temp = -elbo/total_word_count
         
-
-        return np.exp(np_clip_for_exp(temp)), suff_stats
+        return np.exp(np_clip_for_exp(temp)), expec_logs
     
 
     def e_step_batch(
@@ -307,10 +321,7 @@ class LDASmoothed:
 
     def m_step_batch(
         self, 
-        X: np.ndarray,
         lambda_update: np.ndarray,
-        step: int = 100, 
-        threshold:float = 1e-07, 
         verbose:bool = False,
     ) -> None: 
         
@@ -319,6 +330,62 @@ class LDASmoothed:
         expec_log_beta = _dirichlet_expectation_2d(self._lambda_.astype(DTYPE))
 
         return self._lambda_, expec_log_beta
+    
+
+    def em_step_batch(
+        self, 
+        X:np.ndarray,
+        sampling:bool = False,
+        threshold:float = 1e-05,
+        em_num_step: int = 100,
+        e_num_step:int = 100,
+        verbose = False,
+    ):  
+        
+        perplexities = []
+        
+        perplexity, (expec_log_theta, expec_log_beta) = \
+            self.approx_perplexity(X, sampling=sampling) 
+        perplexities.append(perplexity)
+        
+        delta_perplexity = np.inf 
+
+        it = 0 
+        while delta_perplexity > threshold or it < em_num_step: 
+
+            perplexity_orig = perplexity
+
+            self._gamma_, (lambda_update, expec_log_theta) = \
+                self.e_step_batch(
+                    X, 
+                    expec_log_theta, 
+                    expec_log_beta, 
+                    e_num_step, 
+                    threshold, 
+                    verbose
+            )
+            
+            self._lambda_, expec_log_beta = \
+                self.m_step_batch(
+                lambda_update,
+                verbose
+            )
+
+            perplexity, (expec_log_theta, expec_log_beta) = \
+                self.approx_perplexity(
+                    X, 
+                    sampling=sampling,
+                    expec_log_theta= expec_log_theta,
+                    expec_log_beta=expec_log_beta,
+            )
+            perplexities.append(perplexity)
+
+            delta_perplexity = perplexity_orig - perplexity
+
+            it += 1 
+
+        return perplexities
+
 
     def update_alpha(self, step:int = 500, threshold:float = 1e-07, verbose:bool = False,) -> None: 
 

@@ -46,11 +46,8 @@ def expec_real_dist_minus_suro_dist(
 
 class LDASmoothed: 
 
-    """Class implemented the Smoothed Version of Latent Dirichlet Allocation
-
-    - Parameters init 
-    - npaining 
-    - Inference 
+    """
+    Class implemented the Smoothed Version of Latent Dirichlet Allocation
 
     for smoothed version of Latent Dirichlet Allocation 
     """
@@ -122,19 +119,20 @@ class LDASmoothed:
         # define the Convexity-based Varitional Inference hyper-parameters 
         #Dirichlet Prior, Surrogate for _eta_ 
         np.random.seed(SEED)
-        self._lambda_ = np.random.gamma(shape=100, scale=0.01, size=(self.K, self.V),)
+        self._lambda_ = np.random.gamma(shape=100, scale=0.01, size=(self.K, self.V),).astype(DTYPE, copy = False)
         if verbose: 
             print(f"Var Inf - Word Dirichlet prior, Lambda")
             print(self._lambda_.shape)
             print()
 
         #Dirichlet Prior, Surrogate for _alpha_ 
-        self._gamma_ = self._alpha_ + np.ones((self.M,self.K), dtype=DTYPE) * self.V / self.K 
+        self._gamma_ = self._alpha_ + np.ones((self.M,self.K), dtype=DTYPE) * self.V / self.K  
+        self._gamma_ = self._gamma_.astype(DTYPE, copy=False)
+        self._gamma_ : np.ndarray
         if verbose: 
             print(f"Var Inf - Topic Dirichlet prior, Gamma")
             print(self._gamma_.shape)
             print()
-
 
     def approx_elbo(
             self,
@@ -162,6 +160,7 @@ class LDASmoothed:
         # under surogate distribution: 
         # \gamma -> \theta
         if expec_log_theta is None:
+            #print('Compute')
             expec_log_theta = _dirichlet_expectation_2d(self._gamma_.astype(DTYPE))
 
         # \lambda -> \beta 
@@ -231,7 +230,6 @@ class LDASmoothed:
             expec_log_theta,
             expec_log_beta,
         )
-        #print(elbo)
 
         if sampling: 
             total_word_count = np.sum(X) *  self.D_population/num_doc
@@ -241,17 +239,18 @@ class LDASmoothed:
         temp = -elbo/total_word_count
         
         return np.exp(np_clip_for_exp(temp)), expec_logs
-    
 
-    def e_step_batch(
+
+    def e_step(
         self, 
         X:np.ndarray, 
         expec_log_theta: np.ndarray,
         expec_log_beta:np.ndarray,
         step:int = 100, 
         threshold:float = 1e-05, 
+        batch: bool = True, 
         verbose:bool = False,
-    ) -> None: 
+    ) -> tuple: 
         
         """
         Update the document Var Inf parameters following the Eexpectation step of EM
@@ -294,15 +293,14 @@ class LDASmoothed:
                 
                 ### --- Update Gamma[d] --- ###
                 self._gamma_[d,:] = (self._alpha_ + exp_expec_log_theta_d.T * np.dot(d_word_cts.T/phi_d_norm, exp_expec_log_beta_d.T)).ravel()
-                expec_log_theta_d = _dirichlet_expectation_2d(self._gamma_[d,:,np.newaxis])
 
                 ### --- update stop creteria --- ###
                 delta_gamma_d = self._gamma_[d] - gamma_d 
                 l1_delta_gamma_d = np.linalg.norm(delta_gamma_d, ord=1)
 
                 it += 1 
-
-            expec_log_theta[d,:] = expec_log_theta_d.ravel()
+            
+            expec_log_theta = _dirichlet_expectation_2d(self._gamma_.astype(DTYPE))
 
             if it > step:
                 warnings.warn(f"Estep, Maximum iteration reached at step {it} for Document {d}")
@@ -319,26 +317,60 @@ class LDASmoothed:
         return self._gamma_, (lambda_update, expec_log_theta)
             
 
-    def m_step_batch(
+    def m_step(
         self, 
         lambda_update: np.ndarray,
         verbose:bool = False,
-    ) -> None: 
+        batch:bool = True,
+    ) -> tuple: 
         
         self._lambda_ = self._eta_ + lambda_update
-
         expec_log_beta = _dirichlet_expectation_2d(self._lambda_.astype(DTYPE))
 
         return self._lambda_, expec_log_beta
     
+    def em_step(
+        self,
+        X: np.ndarray, 
+        expec_log_theta: np.ndarray,
+        expec_log_beta:np.ndarray,
+        step:int = 100, 
+        threshold:float = 1e-05, 
+        batch: bool = True, 
+        verbose:bool = False,
+    ) -> None: 
 
-    def em_step_batch(
+        """
+        Perform one em-step update 
+        """
+
+        self._gamma_, (lambda_update, expec_log_theta) = \
+            self.e_step(
+                X, 
+                expec_log_theta, 
+                expec_log_beta, 
+                step, 
+                threshold, 
+                verbose
+        )
+        
+        self._lambda_, expec_log_beta = \
+                self.m_step(
+                lambda_update,
+                verbose,
+        )
+
+        return expec_log_theta, expec_log_beta
+    
+
+    def fit(
         self, 
         X:np.ndarray,
         sampling:bool = False,
         threshold:float = 1e-05,
         em_num_step: int = 100,
         e_num_step:int = 100,
+        batch:bool = True,
         verbose = False,
     ):  
         
@@ -351,12 +383,16 @@ class LDASmoothed:
         delta_perplexity = np.inf 
 
         it = 0 
-        while delta_perplexity > threshold or it < em_num_step: 
+        while delta_perplexity > threshold: 
+
+            if it > em_num_step: 
+                warnings.warn(f'EM step exit at iteration {it} before converging')
+                break 
 
             perplexity_orig = perplexity
 
             self._gamma_, (lambda_update, expec_log_theta) = \
-                self.e_step_batch(
+                self.e_step(
                     X, 
                     expec_log_theta, 
                     expec_log_beta, 
@@ -366,7 +402,7 @@ class LDASmoothed:
             )
             
             self._lambda_, expec_log_beta = \
-                self.m_step_batch(
+                self.m_step(
                 lambda_update,
                 verbose
             )
@@ -381,8 +417,10 @@ class LDASmoothed:
             perplexities.append(perplexity)
 
             delta_perplexity = perplexity_orig - perplexity
+            print(delta_perplexity)
 
             it += 1 
+
 
         return perplexities
 

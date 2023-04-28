@@ -252,9 +252,9 @@ class doc_generator:
         self.alpha = Dirichlet(topic_prior)
         self.theta = self.alpha((self.M,))
 
-    def generate_doc(self,) -> List[List[int]]:
+    def generate_doc(self, verbose:bool = False,) -> List[List[int]]:
 
-        l = [10] * self.M 
+        l = [self.L] * self.M 
 
         docs = {}
         for d in range(self.M): 
@@ -272,13 +272,16 @@ class doc_generator:
 
                 word_n = self.words[word_n_assignment_idx.item()]['name']
 
-                print(f"Document: {d} | word: {n} -> topic: {self.topics[word_topic.item()]} -> word: {word_n}")
+                if verbose:
+                    print(f"Document: {d} | word: {n} -> topic: {self.topics[word_topic.item()]} -> word: {word_n}")
 
                 doc.append(word_n)
             
             doc_string = " ".join(doc)
-            print(f"Document {d}: {doc_string}")
-            print()
+
+            if verbose:
+                print(f"Document {d}: {doc_string}")
+                print()
 
             docs[d] = doc_string
 

@@ -362,8 +362,7 @@ class LDASmoothed:
 
         return expec_log_theta, expec_log_beta
     
-
-    def fit(
+    def partial_fit(
         self, 
         X:np.ndarray,
         sampling:bool = False,
@@ -372,62 +371,63 @@ class LDASmoothed:
         e_num_step:int = 100,
         batch:bool = True,
         verbose = False,
-    ):  
+        return_perplexities: bool = False,
+    ) -> None:  
         
-        init_perplexity, expec_logs = \
+        """Complete the EM step, without updateing the hypterparameter
+
+        Returns:
+            _type_: _description_
+        """
+        
+
+        perplexities = []
+        perplexity, expec_logs = \
             self.approx_perplexity(
             X,
             sampling=sampling,
         )
-        #print(expec_logs[0])
-
-        perplexities.append(init_perplexity)
-        print()
-        print(f"Init perplexity = {init_perplexity}")
+        perplexities.append(perplexity)
+        if verbose:
+            print(f"Init perplexity = {perplexity}")
         
         delta_perplexity = np.inf 
 
-        it = 0 
-        while delta_perplexity > threshold: 
+        for _ in range(em_num_step):
 
-            if it > em_num_step: 
-                warnings.warn(f'EM step exit at iteration {it} before converging')
-                break 
+            if delta_perplexity < threshold:
+                if return_perplexities:
+                    return perplexities
+                else:
+                    return 
 
             perplexity_orig = perplexity
 
-            self._gamma_, (lambda_update, expec_log_theta) = \
-                self.e_step(
-                    X, 
-                    expec_log_theta, 
-                    expec_log_beta, 
-                    e_num_step, 
-                    threshold, 
-                    verbose
-            )
+            expec_log_theta, expec_log_beta = \
+                self.em_step(
+                X = X,
+                expec_log_theta= expec_logs[0],
+                expec_log_beta= expec_logs[1],
+                step = e_num_step,
+            ) 
             
-            self._lambda_, expec_log_beta = \
-                self.m_step(
-                lambda_update,
-                verbose
-            )
-
-            perplexity, (expec_log_theta, expec_log_beta) = \
-                self.approx_perplexity(
-                    X, 
-                    sampling=sampling,
-                    expec_log_theta= expec_log_theta,
-                    expec_log_beta=expec_log_beta,
+            perplexity, expec_logs = self.approx_perplexity(
+                X = X, 
+                sampling= sampling,
+                expec_log_theta= expec_log_theta,
+                expec_log_beta = expec_log_beta,
             )
             perplexities.append(perplexity)
 
             delta_perplexity = perplexity_orig - perplexity
-            print(delta_perplexity)
 
-            it += 1 
+        if verbose:
+            print(f"End perplexity = {perplexities[-1]}")
 
-
-        return perplexities
+        if return_perplexities:
+            return perplexities
+        else:
+            return 
 
 
     def update_alpha(self, step:int = 500, threshold:float = 1e-07, verbose:bool = False,) -> None: 

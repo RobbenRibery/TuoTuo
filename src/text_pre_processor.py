@@ -76,13 +76,11 @@ def text_pipline(text, forbidden_list):
     t1 = remove_numbers(t1)
     t1 = remove_punctuation(t1)
 
-    
-   
     #t1_6 = get_lem(t1_4)
     t1 = remove_stopwords(t1) 
     t1 = remove_extra_whitespace_tabs(t1)
   
-    temp_list = [x for x in t1_8.split(' ') if x not in forbidden_list and 'http' not in x]
+    temp_list = [x for x in t1.split(' ') if x not in forbidden_list and 'http' not in x]
 
     if len(temp_list) <= 4: 
         return 'NOINFO'

@@ -374,11 +374,16 @@ class LDASmoothed:
         verbose = False,
     ):  
         
-        perplexities = []
-        
-        perplexity, (expec_log_theta, expec_log_beta) = \
-            self.approx_perplexity(X, sampling=sampling) 
-        perplexities.append(perplexity)
+        init_perplexity, expec_logs = \
+            self.approx_perplexity(
+            X,
+            sampling=sampling,
+        )
+        #print(expec_logs[0])
+
+        perplexities.append(init_perplexity)
+        print()
+        print(f"Init perplexity = {init_perplexity}")
         
         delta_perplexity = np.inf 
 

@@ -2,3 +2,11 @@
 data
 *.gz
 *.zip
+tuotuo.egg-info
+*setup.py
+*setup.cfg
+.vscode 
+.pytest_cache
+dist
+
+

@@ -1,0 +1,29 @@
+Metadata-Version: 2.1
+Name: tuotuo
+Version: 0.0.2
+Summary: LDA & Neura based topic modelling library
+Home-page: https://github.com/RobbenRibery/TuoTuo
+Download-URL: https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/ReleaseV0.0.2.tar.gz
+Author: tuotuo Superman
+Author-email: tuotuo@HanwellSquare.BigForce.com
+License: MIT
+Keywords: Generative Topic Modelling,Latent Dirichlet Allocation
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
+Implemented the Smoothed Varational Inference version of Latent Dirichlet Allocation, following David M. Blei et al. 2003
+
+1. Complete the Varitaional Inference version for batch & online LDA [80%]
+    - Following the original LDA Paper: [https://www.jmlr.org/papers/volume3/blei03a/blei03a.pdf]
+    - Folloing the Online LDA Papaer: [https://papers.nips.cc/paper_files/paper/2010/file/71f6278d140af599e06ad9bf1ba03cb0-Paper.pdf]
+2. Extend the library to support neural varaiaitonal inference 
+    - Following this ICML paper [https://arxiv.org/pdf/1511.06038.pdf]
+3. Extend the training to support Reinforcement Learning 
+    - Follwoing this ACL paper [https://aclanthology.org/D19-1350.pdf]

@@ -2,7 +2,7 @@
 # coding: utf-8
 
 from setuptools import Extension, setup
-from Cython.Build import cythonize
+#from Cython.Build import cythonize
 import numpy 
 from distutils.core import setup
 
@@ -24,5 +24,5 @@ setup(
     url = 'https://github.com/RobbenRibery/TuoTuo/tree/main',
     download_url = 'TuoTuo-ReleaseV0.tar.gz',
     keywords = ['Latent Dirichlet Allocation', 'Topic Modelling'],
-    ext_modules=cythonize(extensions, annotate=True),
+    #ext_modules=cythonize(extensions, annotate=True),
 )

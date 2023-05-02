@@ -2,7 +2,6 @@
 .gitignore
 LICENSE
 README.md
-__init__.py
 cutils.cpython-38-darwin.so
 requirements.txt
 setup.cfg
@@ -10,16 +9,11 @@ setup.py
 .github/workflows/python-package.yml
 .github/workflows/python-publish.yml
 .vscode/c_cpp_properties.json
+notebook/Our Model vs SKLearn.ipynb
 notebook/__init__.py
-notebook/computational_test.ipynb
-notebook/main copy.ipynb
-notebook/main.ipynb
-notebook/reference.ipynb
-notebook/test.ipynb
 src/__init__.py
 src/cutils.c
 src/cutils.cpython-38-darwin.so
-src/cutils.html
 src/cutils.pyx
 src/generator.py
 src/lda_model.py

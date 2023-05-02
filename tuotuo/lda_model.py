@@ -6,13 +6,13 @@ import numpy as np
 
 from scipy.special import psi, gammaln, logsumexp, polygamma
 
-from src.utils import (
+from tuotuo.utils import (
     get_vocab_from_docs, 
     get_np_wct, 
     np_clip_for_exp,
 )
 
-from src.cutils import _dirichlet_expectation_2d
+from tuotuo.cutils import _dirichlet_expectation_2d
 
 from pprint import pprint
 

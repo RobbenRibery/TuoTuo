@@ -2,26 +2,17 @@
 # coding: utf-8
 
 from setuptools import Extension, setup
-#from Cython.Build import cythonize
-#import numpy 
 from distutils.core import setup
 from pathlib import Path
 this_directory = Path(__file__).parent
 
-# extensions = [
-#     Extension(
-#         "src/cutils", 
-#         ["src/cutils.pyx"],
-#         include_dirs=[numpy.get_include()], 
-#     ),
-# ]
 
 long_description = (this_directory / "README.md").read_text()
 
 setup(
-    name = 'tuotuo',
-    packages = ['src'],
-    version = '0.0.3',  
+    name = 'TuoTuo',
+    packages = ['tuotuo'],
+    version = '0.0.5',  
     license='MIT',
     description = 'LDA & Neura based topic modelling library',
     long_description=long_description,
@@ -29,7 +20,7 @@ setup(
     author = 'tuotuo Superman',
     author_email = 'tuotuo@HanwellSquare.BigForce.com',
     url = 'https://github.com/RobbenRibery/TuoTuo',
-    download_url = 'https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/Pypi-0.03.tar.gz',
+    download_url = 'https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/Pypi-0.0.5.tar.gz',
     keywords = ['Generative Topic Modelling','Latent Dirichlet Allocation'],
     install_requires=[            
         'numpy',
@@ -38,7 +29,6 @@ setup(
         'pyro',
         'nltk',
     ],
-    #ext_modules=cythonize(extensions, annotate=True),
     classifiers=[
         'Development Status :: 3 - Alpha', 
         'Intended Audience :: Science/Research',

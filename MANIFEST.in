@@ -1,1 +1,1 @@
-include cysetuptools.py
+include project.toml

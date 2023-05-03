@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd 
 from scipy.special import gammaln, psi
 
-from src.text_pre_processor import (
+from tuotuo.text_pre_processor import (
     remove_accented_chars, 
     remove_special_characters, 
     remove_punctuation,

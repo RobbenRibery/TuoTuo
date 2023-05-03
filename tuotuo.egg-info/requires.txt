@@ -1,5 +1,10 @@
 numpy
 torch
 scipy
-pyro
+pyro-ppl
+pandas
 nltk
+spacy
+
+[dev]
+cython

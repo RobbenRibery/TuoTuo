@@ -1,9 +1,9 @@
 Metadata-Version: 2.1
 Name: TuoTuo
-Version: 0.2.2
+Version: 0.2.4
 Summary: LDA & Neura based topic modelling library
 Home-page: https://github.com/RobbenRibery/TuoTuo
-Download-URL: https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/pypi-test-0.03.tar.gz
+Download-URL: https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/pypi-test-0.04.tar.gz
 Author: tuotuo Superman
 Author-email: tuotuo@HanwellSquare.BigForce.com
 License: MIT

@@ -4,8 +4,7 @@ LICENSE
 MANIFEST.in
 README.md
 cutils.cpython-38-darwin.so
-cysetuptools.py
-project.toml
+pyproject.toml
 requirements.txt
 setup.cfg
 setup.py

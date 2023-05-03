@@ -16,7 +16,7 @@ class NumpyExtension(Extension):
         super()._convert_pyx_sources_to_lang()
 
 extensions = NumpyExtension(
-    name = "tuotuo/cutils", 
+    name = "tuotuo.cutils", 
     sources = ["tuotuo/cutils.pyx"],
     libraries= ['Cython']
 )
@@ -25,14 +25,12 @@ def cythonise_extensions(extensions):
     from Cython.Build import cythonize
     return cythonize(
         extensions, 
-        annotate = True,
-
     )
 
 setup(
     name = 'TuoTuo',
     packages = ['tuotuo'],
-    version = '0.2.2',  
+    version = '0.2.5',  
     license='MIT',
     description = 'LDA & Neura based topic modelling library',
     long_description=long_description,
@@ -40,7 +38,7 @@ setup(
     author = 'tuotuo Superman',
     author_email = 'tuotuo@HanwellSquare.BigForce.com',
     url = 'https://github.com/RobbenRibery/TuoTuo',
-    download_url = 'https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/pypi-test-0.03.tar.gz',
+    download_url = 'https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/pypi-test-0.04.tar.gz',
     keywords = ['Generative Topic Modelling','Latent Dirichlet Allocation'],
     install_requires=[            
         'numpy',

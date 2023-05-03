@@ -50,6 +50,7 @@ setup(
         'pandas',
         'nltk',
         'spacy',
+        'cython',
     ],
     classifiers=[
         'Development Status :: 3 - Alpha', 

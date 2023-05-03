@@ -18,7 +18,6 @@ class NumpyExtension(Extension):
 extensions = NumpyExtension(
     name = "tuotuo.cutils", 
     sources = ["tuotuo/cutils.pyx"],
-    libraries= ['Cython']
 )
 
 def cythonise_extensions(extensions): 
@@ -38,7 +37,7 @@ setup(
     author = 'tuotuo Superman',
     author_email = 'tuotuo@HanwellSquare.BigForce.com',
     url = 'https://github.com/RobbenRibery/TuoTuo',
-    download_url = 'https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/pypi-test-0.04.tar.gz',
+    download_url = 'https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/pypi-test-0.05.tar.gz',
     keywords = ['Generative Topic Modelling','Latent Dirichlet Allocation'],
     install_requires=[            
         'numpy',

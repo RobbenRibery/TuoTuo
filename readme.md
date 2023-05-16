@@ -1,5 +1,6 @@
 # TuoTuo 
-TuoTuo A Topic Modelling library written in Python. TuoTuo is also a cute boy, my son, who is now 6 months old.  
+<img align="left" width="100" height="100" src="images/TuoTuoCutty.png"> TuoTuo A Topic Modelling library written in Python. TuoTuo is also a cute boy, my son, who is now 6 months old.  
+
 
 ## Installation 
 Use the package manager [pip](https://pip.pypa.io/en/stable/) to install TuoTuo. You may find the Pypi distribution [here](https://pypi.org/project/TuoTuo/).

@@ -1,6 +1,5 @@
 # TuoTuo 
-<img align="left" width="80" height="100" src="images/TuoTuoCutty.png"> TuoTuo A Topic Modelling library written in Python. TuoTuo is also a cute boy, my son, who is now 6 months old.  
-\\
+<img align="left" width="70" height="80" src="images/TuoTuoCutty.png"> TuoTuo A Topic Modelling library written in Python. TuoTuo is also a cute boy, my son, who is now 6 months old.  
 
 
 ## Installation 

@@ -29,7 +29,7 @@ def cythonise_extensions(extensions):
 setup(
     name = 'TuoTuo',
     packages = ['tuotuo'],
-    version = '0.2.6',  
+    version = '0.2.7',  
     license='MIT',
     description = 'LDA & Neura based topic modelling library',
     long_description=long_description,
@@ -37,7 +37,7 @@ setup(
     author = 'tuotuo Superman',
     author_email = 'tuotuo@HanwellSquare.BigForce.com',
     url = 'https://github.com/RobbenRibery/TuoTuo',
-    download_url = 'https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/pypi-test-0.06.tar.gz',
+    download_url = 'https://github.com/RobbenRibery/TuoTuo/archive/refs/tags/pypi-0.2.7.tar.gz',
     keywords = ['Generative Topic Modelling','Latent Dirichlet Allocation'],
     install_requires=[            
         'numpy',

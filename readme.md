@@ -130,16 +130,16 @@ to discuss what you would like to change.
 
 As there is no mature topic modeling library available, we are also looking for collaborators who would like to contribute in the following directions: 
 
-1. Variational Inference version for batch & online LDA, following the [original LDA Paper by David Blei in 2023][https://www.jmlr.org/papers/volume3/blei03a/blei03a.pdf] and the [Online LDA Paper on NeuraIPs][https://papers.nips.cc/paper_files/paper/2010/file/71f6278d140af599e06ad9bf1ba03cb0-Paper.pdf]. 
+1. Variational Inference version for batch & online LDA, following the [original LDA Paper by David Blei in 2023](https://www.jmlr.org/papers/volume3/blei03a/blei03a.pdf) and the [Online LDA Paper on NeuraIPs](https://papers.nips.cc/paper_files/paper/2010/file/71f6278d140af599e06ad9bf1ba03cb0-Paper.pdf). 
 
 Most of the work is completed for this part, we still need to work on:
 - computational optimization 
 - online LDA implementation 
 - efficient Newton's update on priors, namely $\alpha$ and $\eta$ 
 
-2. Extend the library to support neural variational inference Following this [ICML paper: Neural Variational Inference for Text Processing][https://arxiv.org/pdf/1511.06038.pdf]
+2. Extend the library to support neural variational inference Following this [ICML paper: Neural Variational Inference for Text Processing](https://arxiv.org/pdf/1511.06038.pdf)
 
-3. Extend the training to support Reinforcement Learning Following this [ACL paper: Neural Topic Model with Reinforcement Learning][https://aclanthology.org/D19-1350.pdf]
+3. Extend the training to support Reinforcement Learning Following this [ACL paper: Neural Topic Model with Reinforcement Learning](https://aclanthology.org/D19-1350.pdf)
 
 ## License
 

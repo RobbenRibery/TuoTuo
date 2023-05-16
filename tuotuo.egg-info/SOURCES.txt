@@ -15,12 +15,14 @@ TuoTuo.egg-info/SOURCES.txt
 TuoTuo.egg-info/dependency_links.txt
 TuoTuo.egg-info/requires.txt
 TuoTuo.egg-info/top_level.txt
+images/generated_doc_perplexities.png
 notebook/Our Model vs SKLearn.ipynb
 notebook/__init__.py
 tuotuo/__init__.py
 tuotuo/cutils.c
 tuotuo/cutils.cpython-38-darwin.so
 tuotuo/cutils.pyx
+tuotuo/document.py
 tuotuo/generator.py
 tuotuo/lda_model.py
 tuotuo/text_pre_processor.py

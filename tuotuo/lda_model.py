@@ -61,6 +61,7 @@ class LDASmoothed:
             word_ct_array: np.ndarray = None,
             word_to_idx: dict = None, 
             idx_to_word: dict = None, 
+            exchangeable_prior: bool = True, 
             verbose: bool = True,
         ) -> None:
 
@@ -220,7 +221,8 @@ class LDASmoothed:
             expec_log_beta: np.ndarray = None,
         ) -> float: 
 
-        """compute the perplexity (per document) based on the approximated ELBO
+        """
+        compute the perplexity (per document) based on the approximated ELBO
 
         """
         num_doc = 1 if X.ndim == 1 else X.shape[0]
@@ -374,7 +376,7 @@ class LDASmoothed:
         return_perplexities: bool = False,
     ) -> None:  
         
-        """Complete the EM step, without updateing the hypterparameter
+        """Complete the EM step, without updating the hypterparameter
 
         Returns:
             _type_: _description_

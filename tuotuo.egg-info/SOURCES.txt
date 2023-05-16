@@ -3,7 +3,6 @@
 LICENSE
 MANIFEST.in
 README.md
-cutils.cpython-38-darwin.so
 pyproject.toml
 requirements.txt
 setup.cfg

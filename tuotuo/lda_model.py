@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Union 
 import warnings 
 
 import torch as np 
@@ -6,12 +6,12 @@ import numpy as np
 
 from scipy.special import psi, gammaln, logsumexp, polygamma
 
+from tuotuo.document import Document
 from tuotuo.utils import (
     get_vocab_from_docs, 
     get_np_wct, 
     np_clip_for_exp,
 )
-
 from tuotuo.cutils import _dirichlet_expectation_2d
 
 from pprint import pprint
@@ -53,86 +53,34 @@ class LDASmoothed:
     """
 
     def __init__(
-            self, 
-            docs: List[List[str]],
+            self,
             num_topics: int,
-            word_ct_dict: dict,
-            num_doc_population: int, 
-            word_ct_array: np.ndarray = None,
-            word_to_idx: dict = None, 
-            idx_to_word: dict = None, 
             exchangeable_prior: bool = True, 
             verbose: bool = True,
         ) -> None:
-
-        assert get_vocab_from_docs(docs) == word_ct_dict
         
-        self.D_population = num_doc_population
-        self.docs = docs 
-        
-        # number of documents 
-        self.M = len(docs)
-
-        # number of unique words in corpus 
-        if word_ct_array is not None:
-            assert word_ct_array.shape[0] == len(word_ct_dict)
-
-            val_word_ct_array, val_word2idx = get_np_wct(word_ct_dict, docs)
-            assert (word_ct_array == val_word_ct_array).all()
-
-            word_2_idx = val_word2idx 
-        else:
-            word_ct_array, word_2_idx = get_np_wct(word_ct_dict, docs)
-
-        self.word_ct_array = word_ct_array
-
-        self.word_2_idx = word_2_idx 
-        self.word_2_idx:dict 
-
-        self.idx_2_word = {v:k for k,v in self.word_2_idx.items()}
-        self.idx_2_word: dict
-
-        # number of unique words in the corpus 
-        self.V = word_ct_array.shape[0]  
-
+        ## ------ parameters init ------ ##
         # number of topics 
         self.K = num_topics
 
-        #parameters init
+        ## ------ parameters init ------ ##
         # define the DGM hyper-parameters
         # Dirichlet Prior 
         np.random.seed(SEED)
-        self._alpha_ = 1#np.random.gamma(shape = 100, scale = 0.01, size =self.K)
-
+        if exchangeable_prior:
+            self._alpha_ = 1
+        else:
+            self._alpha_ = np.random.gamma(shape = 100, scale = 0.01, size = self.K)
         if verbose:
             print(f"Topic Dirichlet Prior, Alpha")
             print(self._alpha_)
             print() 
+
         # Dirichlet Prior - Exchangeable Dirichlet
         self._eta_ = 1
-
         if verbose:
             print(f"Exchangeable Word Dirichlet Prior, Eta ")
             print(self._eta_)
-            print()
-
-
-        # define the Convexity-based Varitional Inference hyper-parameters 
-        #Dirichlet Prior, Surrogate for _eta_ 
-        np.random.seed(SEED)
-        self._lambda_ = np.random.gamma(shape=100, scale=0.01, size=(self.K, self.V),).astype(DTYPE, copy = False)
-        if verbose: 
-            print(f"Var Inf - Word Dirichlet prior, Lambda")
-            print(self._lambda_.shape)
-            print()
-
-        #Dirichlet Prior, Surrogate for _alpha_ 
-        self._gamma_ = self._alpha_ + np.ones((self.M,self.K), dtype=DTYPE) * self.V / self.K  
-        self._gamma_ = self._gamma_.astype(DTYPE, copy=False)
-        self._gamma_ : np.ndarray
-        if verbose: 
-            print(f"Var Inf - Topic Dirichlet prior, Gamma")
-            print(self._gamma_.shape)
             print()
 
     def approx_elbo(
@@ -364,9 +312,9 @@ class LDASmoothed:
 
         return expec_log_theta, expec_log_beta
     
-    def partial_fit(
+    def fit(
         self, 
-        X:np.ndarray,
+        train_doc:Document,
         sampling:bool = False,
         threshold:float = 1e-05,
         em_num_step: int = 100,
@@ -381,7 +329,36 @@ class LDASmoothed:
         Returns:
             _type_: _description_
         """
+
+        ## --- hyper param collection --- ## 
+        # number of document in training corpus 
+        self.train_doc = train_doc
+        self.M = train_doc.M
+
+        # number of unique words in the corpus 
+        self.V = train_doc.V 
+
+        # doc vocab count array
+        X = train_doc.doc_vocab_count_array
         
+        ## --- paramerters initilisation --- ##
+        # define the Convexity-based Varitional Inference hyper-parameters 
+        # Dirichlet Prior, Surrogate for _eta_ 
+        np.random.seed(SEED)
+        self._lambda_ = np.random.gamma(shape=100, scale=0.01, size=(self.K, self.V),).astype(DTYPE, copy = False)
+        if verbose: 
+            print(f"Var Inf - Word Dirichlet prior, Lambda")
+            print(self._lambda_.shape)
+            print()
+
+        #Dirichlet Prior, Surrogate for _alpha_ 
+        self._gamma_ = self._alpha_ + np.ones((self.M, self.K), dtype=DTYPE) * self.V / self.K  
+        self._gamma_ : np.ndarray
+        self._gamma_ = self._gamma_.astype(DTYPE, copy=False)
+        if verbose: 
+            print(f"Var Inf - Topic Dirichlet prior, Gamma")
+            print(self._gamma_.shape)
+            print()
 
         perplexities = []
         perplexity, expec_logs = \

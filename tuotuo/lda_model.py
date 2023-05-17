@@ -411,7 +411,8 @@ class LDASmoothed:
 
     def update_alpha(self, step:int = 500, threshold:float = 1e-07, verbose:bool = False,) -> None: 
 
-        """Newton-Raphson in Linear Time for the sepcial Hessian with 
+        """
+        Newton-Raphson in Linear Time for the sepcial Hessian with 
         Diag(h) + 1z1T
         """
 
@@ -419,29 +420,42 @@ class LDASmoothed:
 
         while it <= step: 
 
-            sum_ = np.sum(self._alpha_)
+            sum_alpha = np.sum(self._alpha_) if isinstance(self._alpha_, int) else self._alpha_ * self.K
 
             # grad in R 1*K
-            g = self.M * (psi(sum_)-psi(self._alpha_)) + \
-                np.sum(psi(self._gamma_), axis=0) - \
-                np.sum(psi(np.sum(self._gamma_, axis=1)))
+            phsi_gamma = psi(self._gamma_)
+            #print(phsi_gamma.shape)
+
+            if isinstance(self._alpha_, np.ndarray):
+                g = self.M * (psi(sum_alpha)-psi(self._alpha_)) + \
+                    np.sum(phsi_gamma - psi(np.sum(self._gamma_,axis=1).reshape(-1,1)), axis =0)
+            else: 
+                #print(self._gamma_.shape)
+                #print(psi(np.sum(self._gamma_,1)))
+                #print(np.sum(phsi_gamma - psi(np.sum(self._gamma_,1))))
+                g = self.M * (psi(self.K * self._alpha_) - self.K * psi(self._alpha_)) + \
+                    np.sum(phsi_gamma - psi(np.sum(self._gamma_,1)).reshape(-1,1))
             
-            # hessian diagonal vector in R 1*K 
-            h = - self.M * polygamma(1, self._alpha_)
+            if isinstance(self._alpha_, np.ndarray):
+                # hessian diagonal vector in R 1*K 
+                h = - self.M * polygamma(1, self._alpha_)
 
-            # hessian constant part 
-            z = self.M * polygamma(1, np.sum(self._alpha_))
+                # hessian constant part 
+                z = self.M * polygamma(1, np.sum(self._alpha_))
 
-            # offset c 
-            c = np.sum(g/h) / ((1/z)+np.sum(1/h))
+                # offset c 
+                c = np.sum(g/h) / ((1/z)+np.sum(1/h))
 
-            # newton step s
-            update = (g-c)/h 
+                # newton step s
+                update = (g-c)/h 
+            else: 
+                h = self.M * polygamma(1, self.K * self._alpha_) * self.K - self.K * polygamma(1, self._alpha_)
+                update = g/(h*self._alpha_ + g)
 
             alpha_new = self._alpha_ - update 
 
-            if (alpha_new < 0).any(): 
-                raise ValueError(f"Negative dirichlet parameter encoutered at iteration {it}, alpda new: {alpha_new}")
+            #if (alpha_new < 0).any(): 
+                #raise ValueError(f"Negative dirichlet parameter encoutered at iteration {it}, alpda new: {alpha_new}")
 
             delta = np.linalg.norm(alpha_new-self._alpha_) 
 

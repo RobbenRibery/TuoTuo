@@ -1,7 +1,5 @@
 # TuoTuo 
-TuoTuo A Topic Modelling library written in Python. TuoTuo is also a cute boy, my son, who is now 6 months old.  
-
-<br/>
+TuoTuo A Topic Modelling library written in Python. TuoTuo is also a cute boy, my son, who is now 6 months old.
 
 ## Installation 
 Use the package manager [pip](https://pip.pypa.io/en/stable/) to install TuoTuo. You may find the Pypi distribution [here](https://pypi.org/project/TuoTuo/).
@@ -16,6 +14,7 @@ Currently, the library only supports Topic modeling via Latent Dirichlet Allocat
 - Generate some documents based on pre-defined Dirichlet Parameters over 5 different topics and 40 unique words
 
 ```python
+import torch as tr
 from tuotuo.generator import doc_generator 
 
 gen = doc_generator(
@@ -67,7 +66,7 @@ End perplexity = 45.96696541539976
 ![Perplexity over 100 iteration](images/generated_doc_perplexities.png)
 
 
-- Check out the top 5 words for each topic according to the variational inference parameter: $\lambda$ 
+- Check out the top 5 words for each topic according to the variational inference parameter: $`\lambda`$ 
 
 ```python
 for topic_index in range(lda._lambda_.shape[0]):
@@ -122,7 +121,6 @@ Topic 2 -> art
 Topic 3 -> sport 
 Topic 4 -> health
 
-
 ## Contributing & References
 
 Pull requests are welcome. For major changes, please open an issue first
@@ -135,7 +133,7 @@ As there is no mature topic modeling library available, we are also looking for 
 Most of the work is completed for this part, we still need to work on:
 - computational optimization 
 - online LDA implementation 
-- efficient Newton's update on priors, namely $\alpha$ and $\eta$ 
+- efficient Newton's update on priors, namely $`\alpha`$ and $`\eta`$ 
 
 2. Extend the library to support neural variational inference Following this [ICML paper: Neural Variational Inference for Text Processing](https://arxiv.org/pdf/1511.06038.pdf)
 

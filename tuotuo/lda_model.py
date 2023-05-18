@@ -461,7 +461,7 @@ class LDASmoothed:
             #if (alpha_new < 0).any(): 
                 #raise ValueError(f"Negative dirichlet parameter encoutered at iteration {it}, alpda new: {alpha_new}")
 
-            delta = np.linalg.norm(alpha_new-self._alpha_) 
+            delta = np.sum(np.abs(alpha_new-self._alpha_))
 
             if verbose: 
                 # elbo = compute_elbo(
@@ -475,7 +475,6 @@ class LDASmoothed:
                 print(f"M Step: Iteration {it}, Delta Alpha = {delta}")
                 print(f"Alpha Old:{self._alpha_} -> Alpha New:{alpha_new}")
 
-
             self._alpha_ = alpha_new
             it += 1 
 
@@ -488,38 +487,39 @@ class LDASmoothed:
 
         """
         Newton-Raphson in Linear Time 
-
+        
+        Eta is going to be a exchangeable Dirichlet by default all the time
         """
         
         it = 0 
         while it <= step: 
+
+            phsi_lambda = psi(self._lambda_)
             
             # gradient 
-            g = self.K * (self.V * psi(self.V * self._eta_) - self.V * psi(self._eta_)) + \
-                np.sum(psi(self._lambda_))- \
-                np.sum(self.V * psi(np.sum(self._lambda_, axis=1)))
+            g = self.K * self.V *(psi(self.V * self._eta_) - psi(self._eta_)) + \
+            np.sum(
+                phsi_lambda - psi(np.sum(self._lambda_,1)).reshape(-1,1)
+            )
 
             # h hessian diagonal 
-            h = self.K * (
-                self.V**2 * polygamma(1, self.V * self._eta_) - \
-                self.V * polygamma(1,self._eta_)
-            )
+            h = self.K * self.V *(self.V * polygamma(1, self.V * self._eta_) - polygamma(1,self._eta_))
 
             # newton step 
             update = g/h
 
             eta_new = self._eta_ - update 
+
             if eta_new < 0: 
                 raise ValueError(f"Dirichlet Parameter become < 0 at iteration {it}")
-            print(f"Eta Old {self._eta_} -> Eta New {eta_new}")
-
-            #if eta_new < 0: 
-                #raise ValueError(f"Dirichelt Disnpibution parameter is positive, hoever dervired {eta_new} from orig {self._eta_} and -update {-update}")
+            
             delta = np.abs(eta_new - self._eta_)
-            #print()
 
-            if verbose: 
+            if verbose:
                 print(f"M Step: delta eta is {delta}")
+                print(f"Eta Old {self._eta_} -> Eta New {eta_new}")
+            #print()
+                
 
             self._eta_ = eta_new 
             it += 1 

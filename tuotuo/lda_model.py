@@ -407,7 +407,7 @@ class LDASmoothed:
             return perplexities
         else:
             return 
-
+        
 
     def update_alpha(self, step:int = 500, threshold:float = 1e-07, verbose:bool = False,) -> None: 
 
@@ -428,29 +428,33 @@ class LDASmoothed:
 
             if isinstance(self._alpha_, np.ndarray):
                 g = self.M * (psi(sum_alpha)-psi(self._alpha_)) + \
-                    np.sum(phsi_gamma - psi(np.sum(self._gamma_,axis=1).reshape(-1,1)), axis =0)
+                    (
+                        phsi_gamma - psi(np.sum(self._gamma_,axis=1).reshape(-1,1))
+                    ).sum(axis=0)
             else: 
-                #print(self._gamma_.shape)
-                #print(psi(np.sum(self._gamma_,1)))
-                #print(np.sum(phsi_gamma - psi(np.sum(self._gamma_,1))))
-                g = self.M * (psi(self.K * self._alpha_) - self.K * psi(self._alpha_)) + \
-                    np.sum(phsi_gamma - psi(np.sum(self._gamma_,1)).reshape(-1,1))
+                # exchangeable Dirichlet Prior
+                g = self.M * self.K * (psi(self.K * self._alpha_) -  psi(self._alpha_)) + \
+                    np.sum(
+                    phsi_gamma - psi(np.sum(self._gamma_,1)).reshape(-1,1)
+                )
             
             if isinstance(self._alpha_, np.ndarray):
+
                 # hessian diagonal vector in R 1*K 
                 h = - self.M * polygamma(1, self._alpha_)
 
                 # hessian constant part 
-                z = self.M * polygamma(1, np.sum(self._alpha_))
+                z = self.M * polygamma(1, sum_alpha)
 
                 # offset c 
-                c = np.sum(g/h) / ((1/z)+np.sum(1/h))
+                c = np.sum(g/h) / ((1./z)+np.sum(1./h))
 
                 # newton step s
                 update = (g-c)/h 
             else: 
-                h = self.M * polygamma(1, self.K * self._alpha_) * self.K - self.K * polygamma(1, self._alpha_)
-                update = g/(h*self._alpha_ + g)
+                # exchangeable Dirichlet Prior
+                h = self.M * self.K * (self.K * polygamma(1, self.K * self._alpha_) - polygamma(1, self._alpha_))
+                update = g/h
 
             alpha_new = self._alpha_ - update 
 

@@ -24,9 +24,9 @@ DTYPE = float
 #Eta: Word Prior, 1D NP array 
 def expec_real_dist_minus_suro_dist(
     expec_log_var: np.ndarray, 
-    real_dist_prior:np.ndarray,
+    real_dist_prior: Union[np.ndarray,int],
     suro_dist_prior:np.ndarray,
-    num_topic: int,
+    real_dist_prior_dim: int,
 ) -> float: 
     
     """Pass in the num_topic here, means assuming that we let alphda being an exchangable Dirichlet as well
@@ -37,10 +37,12 @@ def expec_real_dist_minus_suro_dist(
     assert expec_log_var.ndim == 2
     delta_loss = 0 
 
+    sum_real_dist_prior = np.sum(real_dist_prior) if isinstance(real_dist_prior, np.ndarray) else real_dist_prior * real_dist_prior_dim
+
     delta_loss += np.sum((real_dist_prior-suro_dist_prior)*expec_log_var)
     delta_loss += np.sum(gammaln(suro_dist_prior)-gammaln(real_dist_prior))
     delta_loss += np.sum(
-        gammaln(np.sum(real_dist_prior)) - gammaln(np.sum(suro_dist_prior,1))
+        gammaln(sum_real_dist_prior) - gammaln(np.sum(suro_dist_prior,1))
     )
 
     return delta_loss
@@ -139,13 +141,14 @@ class LDASmoothed:
             elbo += np.dot(d_word_cts, log_phi_sum)
         
         # compute Eq[log p(theta|alpha)] - Eq[log q(theta|gamma)]
-        elbo += \
-            expec_real_dist_minus_suro_dist(
-                expec_log_var= expec_log_theta, 
-                real_dist_prior= self._alpha_,
-                suro_dist_prior= self._gamma_,
-                num_topic= self.K 
+        d1 = expec_real_dist_minus_suro_dist(
+                expec_log_theta, 
+                self._alpha_,
+                self._gamma_,
+                self.K 
             )
+        #print(f'elbo d1: -> {d1}')
+        elbo += d1
         
         # document dependent part of the loss function is completed, 
         # performe scaling 
@@ -154,13 +157,14 @@ class LDASmoothed:
 
         # document indepednet part 
         # Compute Eq[logp(\beta|\eta)] = Eq[logq(\beta|\lambda)]
-        elbo += \
-            expec_real_dist_minus_suro_dist(
-                expec_log_var= expec_log_beta,
-                real_dist_prior= self._eta_,
-                suro_dist_prior= self._lambda_,
-                num_topic= self.V
+        d2 = expec_real_dist_minus_suro_dist(
+                expec_log_beta,
+                self._eta_,
+                self._lambda_,
+                self.V
             )
+        #print(f'elbo d2: -> {d2}')
+        elbo += d2
             
         return elbo, (expec_log_theta, expec_log_beta)
     
@@ -280,6 +284,11 @@ class LDASmoothed:
         self._lambda_ = self._eta_ + lambda_update
         expec_log_beta = _dirichlet_expectation_2d(self._lambda_.astype(DTYPE))
 
+        #print(self._alpha_)
+        #self.update_alpha()
+        #print(self._alpha_)
+        #self.update_eta()
+
         return self._lambda_, expec_log_beta
     
     def em_step(
@@ -322,8 +331,6 @@ class LDASmoothed:
         threshold:float = 1e-05,
         em_num_step: int = 100,
         e_num_step:int = 100,
-        newton_num_step: int = 100,
-        update_hyper_parms:bool = True, 
         batch:bool = True,
         verbose = False,
         return_perplexities: bool = False,
@@ -410,40 +417,29 @@ class LDASmoothed:
             #print(f"perplexity: {perplexity}")
 
             delta_perplexity = perplexity_orig - perplexity
-        
-        if update_hyper_parms:
-            self.update_alpha()
-            self.update_eta()
-
-            perplexity, expec_logs = self.approx_perplexity(
-                X = X, 
-                sampling= sampling,
-                expec_log_theta= expec_log_theta,
-                expec_log_beta = expec_log_beta,
-            )
-            perplexities.append(perplexity)
 
         if verbose:
             print(f"End perplexity = {perplexities[-1]}")
 
         if return_perplexities:
-            return perplexities
+            return expec_logs, perplexities
         else:
-            return 
+            return expec_logs
         
 
-    def update_alpha(self, step:int = 500, threshold:float = 1e-07, verbose:bool = False,) -> None: 
+    def update_alpha(self, step:int = 10000, threshold:float = 1e-06, verbose:bool = False,) -> None: 
 
         """
         Newton-Raphson in Linear Time for the sepcial Hessian with 
         Diag(h) + 1z1T
         """
 
-        it = 0 
+        for it in range(step): 
 
-        while it <= step: 
+            #print(f"Alpha -> {self._alpha_}")
 
-            sum_alpha = np.sum(self._alpha_) if isinstance(self._alpha_, int) else self._alpha_ * self.K
+            sum_alpha = self._alpha_.sum() if isinstance(self._alpha_, np.ndarray) else self._alpha_ * self.K
+            psi_sum = psi(self._gamma_.sum(axis=1)).reshape(-1,1)
 
             # grad in R 1*K
             phsi_gamma = psi(self._gamma_)
@@ -452,8 +448,9 @@ class LDASmoothed:
             if isinstance(self._alpha_, np.ndarray):
                 g = self.M * (psi(sum_alpha)-psi(self._alpha_)) + \
                     (
-                        phsi_gamma - psi(np.sum(self._gamma_,axis=1).reshape(-1,1))
+                        phsi_gamma - psi_sum
                     ).sum(axis=0)
+                #print(f"Gradient -> {g}")
             else: 
                 # exchangeable Dirichlet Prior
                 g = self.M * self.K * (psi(self.K * self._alpha_) -  psi(self._alpha_)) + \
@@ -477,47 +474,37 @@ class LDASmoothed:
             else: 
                 # exchangeable Dirichlet Prior
                 h = self.M * self.K * (self.K * polygamma(1, self.K * self._alpha_) - polygamma(1, self._alpha_))
-                update = g/h
+                update = g/h 
 
             #print(update)
 
             alpha_new = self._alpha_ - update 
 
-            #if (alpha_new < 0).any(): 
-                #raise ValueError(f"Negative dirichlet parameter encoutered at iteration {it}, alpda new: {alpha_new}")
+            if (alpha_new < 0).any(): 
+                raise ValueError(f"Negative dirichlet parameter encoutered at iteration {it}, alpda new: {alpha_new}")
 
             delta = np.sum(np.abs(alpha_new-self._alpha_))
 
             if verbose: 
-                # elbo = compute_elbo(
-                #     self._gamma_,
-                #     self._phi_,
-                #     self._lambda_,
-                #     self._alpha_,
-                #     self._eta_,
-                #     self.word_ct_array
-                # )
                 print(f"M Step: Iteration {it}, Delta Alpha = {delta}")
                 print(f"Alpha Old:{self._alpha_} -> Alpha New:{alpha_new}")
 
             self._alpha_ = alpha_new
-            it += 1 
 
             if delta < threshold: 
                 return 
             
-        warnings.warn(f"Update alphda Maximum iteration reached at step {it}")
+        warnings.warn(f"Update alphda Maximum iteration reached at step {step}")
 
-    def update_eta(self, step:int = 1000, threshold:float = 1e-09, verbose:bool = False) -> None:
+    def update_eta(self, step:int = 10000, threshold:float = 1e-09, verbose:bool = False) -> None:
 
         """
         Newton-Raphson in Linear Time 
         
-        Eta is going to be a exchangeable Dirichlet by default all the time
+        Eta is going to be a exchangeable Dirichlet 
         """
         
-        it = 0 
-        while it <= step: 
+        for it in range(step): 
 
             phsi_lambda = psi(self._lambda_)
             
@@ -534,8 +521,7 @@ class LDASmoothed:
             update = g/h
             #print(update)
 
-            eta_new = self._eta_ - update 
-
+            eta_new = self._eta_ - update
             if eta_new < 0: 
                 raise ValueError(f"Dirichlet Parameter become < 0 at iteration {it}")
             
@@ -546,7 +532,6 @@ class LDASmoothed:
                 print(f"Eta Old {self._eta_} -> Eta New {eta_new}")
 
             self._eta_ = eta_new 
-            it += 1 
             
             if delta < threshold: 
                 return 
@@ -564,7 +549,43 @@ class LDASmoothed:
             print()
 
 
-            
+def _update(var:np.ndarray, vi_var:np.ndarray, const, max_iter=10000, tol=1e-6):
+    """
+    From appendix A.2 of Blei et al., 2003.
+    For hessian with shape `H = diag(h) + 1z1'`
+    10
+    To update alpha, input var=alpha and vi_var=gamma, const=M.
+    To update eta, input var=eta and vi_var=lambda, const=k.
+    """
+    vars = []
+    for _ in range(max_iter):
+
+        print(f"Alpha -> {var}")
+        print(f"Gamma -> ")
+        # store old value
+        var0 = var.copy()
+        # g: gradient
+        psi_sum = psi(vi_var.sum(axis=1)).reshape(-1, 1)
+        g = const * (psi(var.sum()) - psi(var)) + (psi(vi_var) - psi_sum).sum(axis=0)
+        print(f"Gradient -> {g}")
+        # H = diag(h) + 1z1'
+        ## z: Hessian constant component
+        ## h: Hessian diagonal component
+        z = const * polygamma(1, var.sum())
+        h = -const * polygamma(1, var)
+        c = (g / h).sum() / (1./z + (1./h).sum())
+        # update var
+        var -= (g - c) / h
+        # check convergence
+        err = np.sqrt(np.mean((var - var0) ** 2))
+        crit = err < tol
+
+        vars.append(var)
+        if crit:
+            break
+        else:
+            warnings.warn(f"max_iter={max_iter} reached: values might not be optimal.")
+    return vars     
 
 
 

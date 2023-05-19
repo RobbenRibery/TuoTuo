@@ -39,7 +39,9 @@ def expec_real_dist_minus_suro_dist(
 
     delta_loss += np.sum((real_dist_prior-suro_dist_prior)*expec_log_var)
     delta_loss += np.sum(gammaln(suro_dist_prior)-gammaln(real_dist_prior))
-    delta_loss += np.sum(gammaln(real_dist_prior*num_topic) - gammaln(np.sum(suro_dist_prior,1)))
+    delta_loss += np.sum(
+        gammaln(np.sum(real_dist_prior)) - gammaln(np.sum(suro_dist_prior,1))
+    )
 
     return delta_loss
 
@@ -70,9 +72,10 @@ class LDASmoothed:
         if exchangeable_prior:
             self._alpha_ = 1
         else:
-            self._alpha_ = np.random.gamma(shape = 100, scale = 0.01, size = self.K)
+            self._alpha_ = np.random.gamma(shape = 100, scale = 0.01, size = (1, self.K))
+            #print(self._alpha_.shape)
         if verbose:
-            print(f"Topic Dirichlet Prior, Alpha")
+            print(f"Topic Dirichlet Prior, α")
             print(self._alpha_)
             print() 
 
@@ -319,6 +322,8 @@ class LDASmoothed:
         threshold:float = 1e-05,
         em_num_step: int = 100,
         e_num_step:int = 100,
+        newton_num_step: int = 100,
+        update_hyper_parms:bool = True, 
         batch:bool = True,
         verbose = False,
         return_perplexities: bool = False,
@@ -332,11 +337,15 @@ class LDASmoothed:
 
         ## --- hyper param collection --- ## 
         # number of document in training corpus 
-        self.train_doc = train_doc
-        self.M = train_doc.M
+        if not hasattr(self, "train_doc"):
+            self.train_doc = train_doc 
+
+        if not hasattr(self, "M"):
+            self.M = self.train_doc.M
 
         # number of unique words in the corpus 
-        self.V = train_doc.V 
+        if not hasattr(self, "V"):
+            self.V = self.train_doc.V 
 
         # doc vocab count array
         X = train_doc.doc_vocab_count_array
@@ -367,11 +376,11 @@ class LDASmoothed:
             sampling=sampling,
         )
         perplexities.append(perplexity)
+
         if verbose:
             print(f"Init perplexity = {perplexity}")
         
-        delta_perplexity = np.inf 
-
+        delta_perplexity = np.inf
         for _ in range(em_num_step):
 
             if delta_perplexity < threshold:
@@ -388,7 +397,8 @@ class LDASmoothed:
                 expec_log_theta= expec_logs[0],
                 expec_log_beta= expec_logs[1],
                 step = e_num_step,
-            ) 
+            )
+            
             
             perplexity, expec_logs = self.approx_perplexity(
                 X = X, 
@@ -397,8 +407,21 @@ class LDASmoothed:
                 expec_log_beta = expec_log_beta,
             )
             perplexities.append(perplexity)
+            #print(f"perplexity: {perplexity}")
 
             delta_perplexity = perplexity_orig - perplexity
+        
+        if update_hyper_parms:
+            self.update_alpha()
+            self.update_eta()
+
+            perplexity, expec_logs = self.approx_perplexity(
+                X = X, 
+                sampling= sampling,
+                expec_log_theta= expec_log_theta,
+                expec_log_beta = expec_log_beta,
+            )
+            perplexities.append(perplexity)
 
         if verbose:
             print(f"End perplexity = {perplexities[-1]}")
@@ -456,6 +479,8 @@ class LDASmoothed:
                 h = self.M * self.K * (self.K * polygamma(1, self.K * self._alpha_) - polygamma(1, self._alpha_))
                 update = g/h
 
+            #print(update)
+
             alpha_new = self._alpha_ - update 
 
             #if (alpha_new < 0).any(): 
@@ -507,6 +532,7 @@ class LDASmoothed:
 
             # newton step 
             update = g/h
+            #print(update)
 
             eta_new = self._eta_ - update 
 
@@ -518,8 +544,6 @@ class LDASmoothed:
             if verbose:
                 print(f"M Step: delta eta is {delta}")
                 print(f"Eta Old {self._eta_} -> Eta New {eta_new}")
-            #print()
-                
 
             self._eta_ = eta_new 
             it += 1 
@@ -529,9 +553,15 @@ class LDASmoothed:
 
         warnings.warn(f"Update Eta: Maximum iteration reached at step {it}")
 
+    def get_top_k_words(self, k:int):
 
+        for topic_index in range(self._lambda_.shape[0]):
+            topk = np.argsort(self._lambda_[topic_index,:],)[-k:]
 
-
+            print(f"Topic {topic_index}")
+            for i, idx in enumerate(topk):
+                print(f"Top {i+1} -> {self.train_doc.idx_to_vocab[idx]}")
+            print()
 
 
             
